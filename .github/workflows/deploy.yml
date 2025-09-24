@@ -63,7 +63,7 @@ jobs:
             --cache-to   type=registry,ref=$IMAGE_NS/rails:buildcache,mode=max \
             -t $IMAGE_NS/rails:${{ github.sha }} \
             -f $RAILS_DIR/Dockerfile \
-            . \
+            $RAILS_DIR \
             --push
 
       # Build & push Python Agent (arm64)
@@ -76,7 +76,7 @@ jobs:
             --cache-to   type=registry,ref=$IMAGE_NS/agent:buildcache,mode=max \
             -t $IMAGE_NS/agent:${{ github.sha }} \
             -f $PY_DIR/Dockerfile \
-            . \
+            $PY_DIR \
             --push
 
       # ----- Rollback rotation: keep last prod as prev -----
