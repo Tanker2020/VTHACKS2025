@@ -7,12 +7,23 @@ on:
       - 'backend/railsApp/**'
       - '.github/workflows/ci.yml'
   pull_request:
+    branches: [ main ]
     paths:
       - 'backend/railsApp/**'
       - '.github/workflows/ci.yml'
 
+# Cancel older CI runs on the same branch/PR
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# ---------------------- scan_ruby ----------------------
 jobs:
   scan_ruby:
+    name: scan_ruby
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -24,10 +35,12 @@ jobs:
         with:
           ruby-version: '3.4.6'
           bundler-cache: true
-      - name: Brakeman
+      - name: Brakeman (Rails security scan)
         run: bin/brakeman --no-pager
 
+  # ---------------------- scan_js ----------------------
   scan_js:
+    name: scan_js
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -39,10 +52,12 @@ jobs:
         with:
           ruby-version: '3.4.6'
           bundler-cache: true
-      - name: Importmap audit
+      - name: Importmap audit (JS deps)
         run: bin/importmap audit
 
+  # ------------------------ lint -----------------------
   lint:
+    name: lint
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -57,22 +72,35 @@ jobs:
       - name: Rubocop
         run: bin/rubocop -f github
 
+  # ------------------------ test -----------------------
   test:
+    name: test
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: backend/railsApp
     steps:
       - uses: actions/checkout@v4
+
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4.6'
           bundler-cache: true
+
+      # Uncomment if you actually run system tests that need Chrome
+      # - name: Install Chrome for system tests
+      #   run: |
+      #     sudo apt-get update
+      #     sudo apt-get install --no-install-recommends -y google-chrome-stable
+
       - name: Run tests
         env:
           RAILS_ENV: test
-        run: bin/rails db:test:prepare test
+        run: |
+          bin/rails db:test:prepare
+          bin/rails test
+
       - name: Upload failed screenshots
         if: failure()
         uses: actions/upload-artifact@v4
