@@ -16,7 +16,8 @@ WORKDIR /app
 
 # Install gems using the lockfile (production-only for smaller image)
 # TIP: ensure your Gemfile.lock includes linux platform: `bundle lock --add-platform aarch64-linux`
-COPY railsApp/Gemfile railsApp/Gemfile.lock ./
+WORKDIR /app
+COPY railsApp/Gemfile railsApp/Gemfile.lock ./railsApp/
 RUN bundle config set deployment 'true' \
  && bundle config set without 'development test' \
  && bundle install --jobs=4
