@@ -1,0 +1,143 @@
+name: CI/CD (GHCR + self-hosted deploy w/ rollback)
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'backend/railsApp/**'
+      - 'backend/python/**'
+      - 'backend/deploy/**'
+      - '.github/workflows/deploy.yml'
+  # Optional: manual trigger for rollbacks (choose TAG = prod/prev/<sha>)
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to deploy (prod | prev | <sha>)'
+        required: true
+        default: 'prod'
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: true
+
+env:
+  IMAGE_NS: ghcr.io/${{ github.repository }}
+  RAILS_DIR: backend/railsApp
+  PY_DIR: backend/python
+  COMPOSE_DIR: backend/deploy
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # Enable multi-arch builder and emulation (we only build arm64 for your Ampere VM)
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build & push Rails image (arm64)
+      - name: Build & push Rails (arm64)
+        run: |
+          docker buildx build \
+            --platform linux/arm64 \
+            -t $IMAGE_NS/rails:${{ github.sha }} \
+            -f $RAILS_DIR/Dockerfile \
+            . \
+            --push
+
+      # Build & push Python agent image (arm64)
+      - name: Build & push Agent (arm64)
+        run: |
+          docker buildx build \
+            --platform linux/arm64 \
+            -t $IMAGE_NS/agent:${{ github.sha }} \
+            -f $PY_DIR/Dockerfile \
+            . \
+            --push
+
+      # ----- Rollback rotation: keep exactly two rolling tags per service -----
+      # Rails: prod -> prev
+      - name: Rotate rails prod -> prev
+        continue-on-error: true
+        run: |
+          docker pull $IMAGE_NS/rails:prod || exit 0
+          docker tag  $IMAGE_NS/rails:prod $IMAGE_NS/rails:prev
+          docker push $IMAGE_NS/rails:prev
+
+      # Rails: promote current sha -> prod
+      - name: Promote rails sha -> prod
+        run: |
+          docker pull $IMAGE_NS/rails:${{ github.sha }}
+          docker tag  $IMAGE_NS/rails:${{ github.sha }} $IMAGE_NS/rails:prod
+          docker push $IMAGE_NS/rails:prod
+
+      # Agent: prod -> prev
+      - name: Rotate agent prod -> prev
+        continue-on-error: true
+        run: |
+          docker pull $IMAGE_NS/agent:prod || exit 0
+          docker tag  $IMAGE_NS/agent:prod $IMAGE_NS/agent:prev
+          docker push $IMAGE_NS/agent:prev
+
+      # Agent: promote current sha -> prod
+      - name: Promote agent sha -> prod
+        run: |
+          docker pull $IMAGE_NS/agent:${{ github.sha }}
+          docker tag  $IMAGE_NS/agent:${{ github.sha }} $IMAGE_NS/agent:prod
+          docker push $IMAGE_NS/agent:prod
+      # ----------------------------------------------------------------------
+
+  deploy:
+    needs: build-push
+    runs-on: self-hosted   # your Oracle VM runner
+    permissions:
+      contents: read
+      packages: read
+    env:
+      # If manually triggered, use the chosen input tag; otherwise default to prod
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || 'prod' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GHCR on VM
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Pull images
+        working-directory: ${{ github.workspace }}/${{ env.COMPOSE_DIR }}
+        env:
+          IMAGE_NS: ${{ env.IMAGE_NS }}
+          TAG: ${{ env.TAG }}
+        run: |
+          TAG=${TAG} IMAGE_NS=${IMAGE_NS} docker compose pull
+
+      - name: DB migrate (Rails)
+        working-directory: ${{ github.workspace }}/${{ env.COMPOSE_DIR }}
+        env:
+          IMAGE_NS: ${{ env.IMAGE_NS }}
+          TAG: ${{ env.TAG }}
+          RAILS_ENV: production
+        run: |
+          TAG=${TAG} IMAGE_NS=${IMAGE_NS} docker compose run --rm rails bundle exec rake db:migrate
+
+      - name: Up services
+        working-directory: ${{ github.workspace }}/${{ env.COMPOSE_DIR }}
+        env:
+          IMAGE_NS: ${{ env.IMAGE_NS }}
+          TAG: ${{ env.TAG }}
+        run: |
+          TAG=${TAG} IMAGE_NS=${IMAGE_NS} docker compose up -d
+
+      - name: Health check
+        run: |
+          curl -fsS http://127.0.0.1:3000/health || (docker ps; docker logs $(docker ps -q --filter name=_rails_ | head -1); exit 1)

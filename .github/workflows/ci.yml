@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'backend/railsApp/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    paths:
+      - 'backend/railsApp/**'
+      - '.github/workflows/ci.yml'
+
+jobs:
+  scan_ruby:
+    runs-on: [self-hosted, linux]
+    defaults:
+      run:
+        working-directory: backend/railsApp
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4.6'
+          bundler-cache: true
+      - name: Brakeman
+        run: bin/brakeman --no-pager
+
+  scan_js:
+    runs-on: [self-hosted, linux]
+    defaults:
+      run:
+        working-directory: backend/railsApp
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4.6'
+          bundler-cache: true
+      - name: Importmap audit
+        run: bin/importmap audit
+
+  lint:
+    runs-on: [self-hosted, linux]
+    defaults:
+      run:
+        working-directory: backend/railsApp
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4.6'
+          bundler-cache: true
+      - name: Rubocop
+        run: bin/rubocop -f github
+
+  test:
+    runs-on: [self-hosted, linux]
+    defaults:
+      run:
+        working-directory: backend/railsApp
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4.6'
+          bundler-cache: true
+      - name: Run tests
+        env:
+          RAILS_ENV: test
+        run: bin/rails db:test:prepare test
+      - name: Upload failed screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: ${{ github.workspace }}/backend/railsApp/tmp/screenshots
+          if-no-files-found: ignore
