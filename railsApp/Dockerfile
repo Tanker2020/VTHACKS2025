@@ -1,59 +1,50 @@
-# ========= Rails (Ruby 3.4) =========
-# Multi-stage: build gems/assets, then copy into a tiny runtime image.
-
-ARG RUBY_VERSION=3.4
+# syntax=docker/dockerfile:1
+ARG RUBY_VERSION=3.4.0
 ARG DEBIAN_FRONTEND=noninteractive
 
-# ---- Build stage ----
+# ---------- build stage ----------
 FROM ruby:${RUBY_VERSION}-slim AS build
+WORKDIR /app
 
-# System deps needed to compile native gems (pg, nokogiri, etc.)
+# Build deps for native gems (pg, nokogiri, etc.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential git curl pkg-config libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+# Gem layer (best cache)
+COPY Gemfile Gemfile.lock ./
+# Ensure lock supports arm64 (Ampere)
+RUN bundle lock --add-platform aarch64-linux || true
+ENV BUNDLE_DEPLOYMENT=1 BUNDLE_WITHOUT="development test"
+RUN bundle install --jobs=4 && rm -rf /usr/local/bundle/cache
 
-# Install gems using the lockfile (production-only for smaller image)
-# TIP: ensure your Gemfile.lock includes linux platform: `bundle lock --add-platform aarch64-linux`
-WORKDIR /app
-COPY railsApp/Gemfile railsApp/Gemfile.lock ./railsApp/
-RUN bundle config set deployment 'true' \
- && bundle config set without 'development test' \
- && bundle install --jobs=4
+# App code
+COPY . .
 
-# Copy the app
-COPY railsApp/ ./
-
-# Precompile assets if you have any (safe to ignore if none)
+# Precompile assets (skip if you don't have assets)
 ENV RAILS_ENV=production
-RUN bundle exec rake assets:precompile || true
+# Use a dummy secret so precompile doesn’t need the real master key
+RUN SECRET_KEY_BASE_DUMMY=1 bundle exec rake assets:precompile || true
 
-# ---- Runtime stage ----
+# ---------- runtime stage ----------
 FROM ruby:${RUBY_VERSION}-slim
+WORKDIR /app
 
-# Only runtime libs (no compiler)
+# Runtime libs only
 RUN apt-get update && apt-get install -y --no-install-recommends \
       libpq5 curl \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+COPY --from=build /usr/local/bundle /usr/local/bundle
 COPY --from=build /app /app
 
-# Optional: drop privileges
+# Drop privileges
 RUN useradd -m app && chown -R app:app /app
 USER app
 
-# Rails runtime env
-ENV RAILS_ENV=production \
-    RACK_ENV=production \
-    BUNDLE_DEPLOYMENT=1
-
-# Puma on 3000 (make sure you have config/puma.rb)
+ENV RAILS_ENV=production RACK_ENV=production BUNDLE_DEPLOYMENT=1
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=5 \
   CMD curl -fsS http://localhost:3000/health || exit 1
 
-# NOTE:
-# - Provide RAILS_MASTER_KEY, DATABASE_URL, REDIS_URL via env/.env file (not baked into image)
-CMD ["bundle", "exec", "puma", "-C", "config/puma.rb"]
+CMD ["bundle","exec","puma","-C","config/puma.rb"]
