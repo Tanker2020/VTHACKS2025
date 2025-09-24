@@ -4,12 +4,12 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'backend/railsApp/**'
+      - 'backend/**'
       - '.github/workflows/ci.yml'
   pull_request:
     branches: [ main ]
     paths:
-      - 'backend/railsApp/**'
+      - 'backend/**'
       - '.github/workflows/ci.yml'
 
 concurrency:
@@ -20,58 +20,117 @@ permissions:
   contents: read
 
 jobs:
-  # ---------------------- scan_ruby ----------------------
+  # Helper step definition reused via YAML anchors is not supported by Actions,
+  # so we repeat the short "locate dir" snippet in each job.
+
   scan_ruby:
     name: scan_ruby
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend/railsApp
     steps:
       - uses: actions/checkout@v4
+
+      - name: Locate Rails app dir
+        id: locate
+        shell: bash
+        run: |
+          set -euo pipefail
+          for d in backend/railsApp backend/rails railsApp rails; do
+            if [ -f "$d/Gemfile" ]; then
+              echo "APP_DIR=$d" >> "$GITHUB_ENV"
+              echo "Found Rails at: $d"
+              exit 0
+            fi
+          done
+          echo "❌ Could not find Rails app directory. Repo layout:" >&2
+          ls -la
+          echo "--- backend:" >&2
+          ls -la backend || true
+          exit 1
+
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4.6'
           bundler-cache: true
-      - name: Brakeman (Rails security scan)
-        run: bin/brakeman --no-pager
 
-  # ---------------------- scan_js ----------------------
+      - name: Brakeman (Rails security scan)
+        shell: bash
+        run: |
+          cd "$APP_DIR"
+          bin/brakeman --no-pager
+
   scan_js:
     name: scan_js
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend/railsApp
     steps:
       - uses: actions/checkout@v4
+
+      - name: Locate Rails app dir
+        id: locate
+        shell: bash
+        run: |
+          set -euo pipefail
+          for d in backend/railsApp backend/rails railsApp rails; do
+            if [ -f "$d/Gemfile" ]; then
+              echo "APP_DIR=$d" >> "$GITHUB_ENV"
+              echo "Found Rails at: $d"
+              exit 0
+            fi
+          done
+          echo "❌ Could not find Rails app directory. Repo layout:" >&2
+          ls -la
+          echo "--- backend:" >&2
+          ls -la backend || true
+          exit 1
+
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4.6'
           bundler-cache: true
-      - name: Importmap audit (JS deps)
-        run: bin/importmap audit
 
-  # ------------------------ lint -----------------------
+      - name: Importmap audit (JS deps)
+        shell: bash
+        run: |
+          cd "$APP_DIR"
+          bin/importmap audit
+
   lint:
     name: lint
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend/railsApp
     steps:
       - uses: actions/checkout@v4
+
+      - name: Locate Rails app dir
+        id: locate
+        shell: bash
+        run: |
+          set -euo pipefail
+          for d in backend/railsApp backend/rails railsApp rails; do
+            if [ -f "$d/Gemfile" ]; then
+              echo "APP_DIR=$d" >> "$GITHUB_ENV"
+              echo "Found Rails at: $d"
+              exit 0
+            fi
+          done
+          echo "❌ Could not find Rails app directory. Repo layout:" >&2
+          ls -la
+          echo "--- backend:" >&2
+          ls -la backend || true
+          exit 1
+
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4.6'
           bundler-cache: true
-      - name: Rubocop
-        run: bin/rubocop -f github
 
-  # ------------------------ test -----------------------
+      - name: Rubocop
+        shell: bash
+        run: |
+          cd "$APP_DIR"
+          bin/rubocop -f github
+
   test:
     name: test
     runs-on: ubuntu-latest
@@ -98,11 +157,26 @@ jobs:
           --health-interval=5s
           --health-timeout=3s
           --health-retries=20
-    defaults:
-      run:
-        working-directory: backend/railsApp
     steps:
       - uses: actions/checkout@v4
+
+      - name: Locate Rails app dir
+        id: locate
+        shell: bash
+        run: |
+          set -euo pipefail
+          for d in backend/railsApp backend/rails railsApp rails; do
+            if [ -f "$d/Gemfile" ]; then
+              echo "APP_DIR=$d" >> "$GITHUB_ENV"
+              echo "Found Rails at: $d"
+              exit 0
+            fi
+          done
+          echo "❌ Could not find Rails app directory. Repo layout:" >&2
+          ls -la
+          echo "--- backend:" >&2
+          ls -la backend || true
+          exit 1
 
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
@@ -110,19 +184,16 @@ jobs:
           ruby-version: '3.4.6'
           bundler-cache: true
 
-      # If you run system tests needing a browser, uncomment:
-      # - name: Install Chrome for system tests
-      #   run: |
-      #     sudo apt-get update
-      #     sudo apt-get install --no-install-recommends -y google-chrome-stable
+      # If you run system tests needing a browser, add Chrome install here.
 
       - name: Run tests
         env:
           RAILS_ENV: test
-          # CI DB is a local ephemeral Postgres service
           DATABASE_URL: postgres://rails:rails@localhost:5432/app_test
           REDIS_URL: redis://localhost:6379/0
+        shell: bash
         run: |
+          cd "$APP_DIR"
           bin/rails db:test:prepare
           bin/rails test
 
@@ -131,5 +202,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: screenshots
-          path: backend/railsApp/tmp/screenshots
+          path: ${{ env.APP_DIR }}/tmp/screenshots
           if-no-files-found: ignore
