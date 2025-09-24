@@ -23,6 +23,8 @@ env:
   RAILS_DIR: railsApp
   PY_DIR: python
   COMPOSE_DIR: deploy
+  RAILS_DOCKERFILE: deploy/Dockerfile.railsApp     # case-sensitive
+  PY_DOCKERFILE: deploy/DockerFile.python
 
 jobs:
   build-push:
