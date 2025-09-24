@@ -64,7 +64,7 @@ jobs:
             --cache-from type=registry,ref=$IMAGE_NS/rails:buildcache \
             --cache-to   type=registry,ref=$IMAGE_NS/rails:buildcache,mode=max \
             -t $IMAGE_NS/rails:${{ github.sha }} \
-            -f $RAILS_DIR/Dockerfile \
+            -f "$RAILS_DOCKERFILE" \
             $RAILS_DIR \
             --push
 
@@ -77,7 +77,7 @@ jobs:
             --cache-from type=registry,ref=$IMAGE_NS/agent:buildcache \
             --cache-to   type=registry,ref=$IMAGE_NS/agent:buildcache,mode=max \
             -t $IMAGE_NS/agent:${{ github.sha }} \
-            -f $PY_DIR/Dockerfile \
+            -f "$PY_DOCKERFILE" \
             $PY_DIR \
             --push
 
