@@ -4,9 +4,9 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'backend/railsApp/**'
-      - 'backend/python/**'
-      - 'backend/deploy/**'
+      - 'railsApp/**'
+      - 'python/**'
+      - 'deploy/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
     inputs:
@@ -20,9 +20,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  RAILS_DIR: backend/railsApp
-  PY_DIR: backend/python
-  COMPOSE_DIR: backend/deploy
+  RAILS_DIR: railsApp
+  PY_DIR: python
+  COMPOSE_DIR: deploy
 
 jobs:
   build-push:
