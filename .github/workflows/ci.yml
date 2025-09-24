@@ -78,5 +78,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: screenshots
-          path: ${{ github.workspace }}/backend/railsApp/tmp/screenshots
+          path: backend/railsApp/tmp/screenshots
           if-no-files-found: ignore
