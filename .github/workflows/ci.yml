@@ -39,17 +39,14 @@ jobs:
               exit 0
             fi
           done
-          echo "❌ Could not find Rails app directory. Repo layout:" >&2
-          ls -la
-          echo "--- backend:" >&2
-          ls -la backend || true
+          echo "❌ Could not find Rails app directory." >&2
           exit 1
 
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.4.6'     # if this ever causes issues, drop to 3.3.x
-          bundler-cache: false      # we'll run bundle install inside APP_DIR
+          ruby-version: '3.4.6'
+          bundler-cache: false
 
       - name: Install gems
         shell: bash
@@ -202,7 +199,22 @@ jobs:
           bundle config set path vendor/bundle
           bundle install --jobs 4 --retry 3
 
-      # If you run system tests needing a browser, add Chrome install here.
+      - name: Prepare test DB (create/migrate & ensure schema.rb exists)
+        env:
+          RAILS_ENV: test
+          DATABASE_URL: postgres://rails:rails@localhost:5432/app_test
+          REDIS_URL: redis://localhost:6379/0
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$APP_DIR"
+          # Creates DB if needed, runs migrations, and loads/dumps schema.
+          bundle exec rails db:prepare
+          # In case you have zero migrations yet, make sure schema.rb exists:
+          if [ ! -f db/schema.rb ]; then
+            echo "No schema.rb yet; dumping empty schema."
+            bundle exec rails db:schema:dump
+          fi
 
       - name: Run tests
         env:
@@ -212,7 +224,6 @@ jobs:
         shell: bash
         run: |
           cd "$APP_DIR"
-          bundle exec rails db:test:prepare
           bundle exec rails test
 
       - name: Upload failed screenshots
