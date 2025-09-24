@@ -1,3 +1,4 @@
+# railsApp/Dockerfile
 # syntax=docker/dockerfile:1
 ARG RUBY_VERSION=3.4.6
 ARG DEBIAN_FRONTEND=noninteractive
@@ -6,9 +7,9 @@ ARG DEBIAN_FRONTEND=noninteractive
 FROM ruby:${RUBY_VERSION}-slim-bookworm AS build
 WORKDIR /app
 
-# Build deps for native gems (pg, nokogiri, etc.)
+# Build deps for native gems (pg, nokogiri, psych via libyaml, etc.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      build-essential git curl pkg-config libpq-dev \
+      build-essential git curl pkg-config libpq-dev libyaml-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Gem layer (best cache)
@@ -21,20 +22,20 @@ RUN bundle install --jobs=4 && rm -rf /usr/local/bundle/cache
 # App code
 COPY . .
 
-# Precompile assets (skip if you don't have assets)
+# Precompile assets (safe to skip if you have none)
 ENV RAILS_ENV=production
-# Use a dummy secret so precompile doesn’t need the real master key
 RUN SECRET_KEY_BASE_DUMMY=1 bundle exec rake assets:precompile || true
 
 # ---------- runtime stage ----------
 FROM ruby:${RUBY_VERSION}-slim-bookworm
 WORKDIR /app
 
-# Runtime libs only
+# Runtime libs only (no compilers)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      libpq5 curl \
+      libpq5 libyaml-0-2 curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Copy gems and app from build stage
 COPY --from=build /usr/local/bundle /usr/local/bundle
 COPY --from=build /app /app
 
