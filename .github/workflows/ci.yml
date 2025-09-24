@@ -12,7 +12,6 @@ on:
       - 'backend/railsApp/**'
       - '.github/workflows/ci.yml'
 
-# Cancel older CI runs on the same branch/PR
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -20,8 +19,8 @@ concurrency:
 permissions:
   contents: read
 
-# ---------------------- scan_ruby ----------------------
 jobs:
+  # ---------------------- scan_ruby ----------------------
   scan_ruby:
     name: scan_ruby
     runs-on: ubuntu-latest
@@ -76,6 +75,29 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: rails
+          POSTGRES_PASSWORD: rails
+          POSTGRES_DB: app_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U rails -d app_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=20
     defaults:
       run:
         working-directory: backend/railsApp
@@ -88,7 +110,7 @@ jobs:
           ruby-version: '3.4.6'
           bundler-cache: true
 
-      # Uncomment if you actually run system tests that need Chrome
+      # If you run system tests needing a browser, uncomment:
       # - name: Install Chrome for system tests
       #   run: |
       #     sudo apt-get update
@@ -97,6 +119,9 @@ jobs:
       - name: Run tests
         env:
           RAILS_ENV: test
+          # CI DB is a local ephemeral Postgres service
+          DATABASE_URL: postgres://rails:rails@localhost:5432/app_test
+          REDIS_URL: redis://localhost:6379/0
         run: |
           bin/rails db:test:prepare
           bin/rails test
