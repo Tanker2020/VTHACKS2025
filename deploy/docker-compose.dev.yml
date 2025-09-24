@@ -1,0 +1,39 @@
+services:
+  rails:
+    build:
+      context: ../..
+      dockerfile: backend/railsApp/Dockerfile.dev
+    ports:
+      - "3000:3000"
+    env_file:
+      - ../../.env.dev     # optional; for dev-only vars
+    environment:
+      RAILS_ENV: development
+    volumes:
+      - ../railsApp:/app           # live code
+      - bundle:/usr/local/bundle   # persist gems
+      - rails_tmp:/app/tmp         # fewer perms issues
+    depends_on:
+      - redis
+
+  agent:
+    build:
+      context: ../..
+      dockerfile: backend/python/Dockerfile
+    working_dir: /app
+    command: python main.py
+    env_file:
+      - ../../.env.dev     # add your agent’s dev vars here
+    volumes:
+      - ../python:/app     # live code
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  bundle:
+  rails_tmp:

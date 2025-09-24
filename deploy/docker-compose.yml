@@ -1,0 +1,52 @@
+services:
+  rails:
+    image: ${IMAGE_NS}/rails:${TAG:-prod}
+    env_file: /home/opc/srv/myapp/.env
+    ports:
+      - "127.0.0.1:3000:3000"         # only local, nginx proxies to this
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: always
+    pull_policy: always
+    # Optional niceties:
+    # logging:
+    #   driver: json-file
+    #   options:
+    #     max-size: "10m"
+    #     max-file: "3"
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: "2.0"
+    #       memory: "8g"
+
+  agent:
+    image: ${IMAGE_NS}/agent:${TAG:-prod}
+    env_file: /home/opc/srv/myapp/.env
+    depends_on:
+      rails:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+    pull_policy: always
+    # healthcheck (if your agent exposes one):
+    # healthcheck:
+    #   test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+    #   interval: 30s
+    #   timeout: 5s
+    #   retries: 10
+    #   start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: always

@@ -1,0 +1,22 @@
+# General
+.DS_Store
+.env
+.env.*
+*.log
+
+# Rails
+/log
+/tmp
+/storage
+/node_modules
+/.bundle
+/vendor/bundle
+/coverage
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Docker
+*.local

@@ -1,0 +1,235 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/ci.yml'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------- scan_ruby ----------------------
+  scan_ruby:
+    name: scan_ruby
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Locate Rails app dir
+        id: locate
+        shell: bash
+        run: |
+          set -euo pipefail
+          for d in backend/railsApp backend/rails railsApp rails; do
+            if [ -f "$d/Gemfile" ]; then
+              echo "APP_DIR=$d" >> "$GITHUB_ENV"
+              echo "Found Rails at: $d"
+              exit 0
+            fi
+          done
+          echo "❌ Could not find Rails app directory." >&2
+          exit 1
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4.6'
+          bundler-cache: false
+
+      - name: Install gems
+        shell: bash
+        run: |
+          cd "$APP_DIR"
+          bundle config set path vendor/bundle
+          bundle install --jobs 4 --retry 3
+
+      - name: Brakeman (Rails security scan)
+        shell: bash
+        run: |
+          cd "$APP_DIR"
+          bundle exec bin/brakeman --no-pager
+
+  # ---------------------- scan_js ----------------------
+  scan_js:
+    name: scan_js
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Locate Rails app dir
+        id: locate
+        shell: bash
+        run: |
+          set -euo pipefail
+          for d in backend/railsApp backend/rails railsApp rails; do
+            if [ -f "$d/Gemfile" ]; then
+              echo "APP_DIR=$d" >> "$GITHUB_ENV"
+              echo "Found Rails at: $d"
+              exit 0
+            fi
+          done
+          echo "❌ Could not find Rails app directory." >&2
+          exit 1
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4.6'
+          bundler-cache: false
+
+      - name: Install gems
+        shell: bash
+        run: |
+          cd "$APP_DIR"
+          bundle config set path vendor/bundle
+          bundle install --jobs 4 --retry 3
+
+      - name: Importmap audit (JS deps)
+        shell: bash
+        run: |
+          cd "$APP_DIR"
+          bundle exec bin/importmap audit
+
+  # ------------------------ lint -----------------------
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Locate Rails app dir
+        id: locate
+        shell: bash
+        run: |
+          set -euo pipefail
+          for d in backend/railsApp backend/rails railsApp rails; do
+            if [ -f "$d/Gemfile" ]; then
+              echo "APP_DIR=$d" >> "$GITHUB_ENV"
+              echo "Found Rails at: $d"
+              exit 0
+            fi
+          done
+          echo "❌ Could not find Rails app directory." >&2
+          exit 1
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4.6'
+          bundler-cache: false
+
+      - name: Install gems
+        shell: bash
+        run: |
+          cd "$APP_DIR"
+          bundle config set path vendor/bundle
+          bundle install --jobs 4 --retry 3
+
+      - name: Rubocop
+        shell: bash
+        run: |
+          cd "$APP_DIR"
+          bundle exec bin/rubocop -f github
+
+  # ------------------------ test -----------------------
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: rails
+          POSTGRES_PASSWORD: rails
+          POSTGRES_DB: app_test
+        ports: [ "5432:5432" ]
+        options: >-
+          --health-cmd="pg_isready -U rails -d app_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        image: redis:7-alpine
+        ports: [ "6379:6379" ]
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Locate Rails app dir
+        id: locate
+        shell: bash
+        run: |
+          set -euo pipefail
+          for d in backend/railsApp backend/rails railsApp rails; do
+            if [ -f "$d/Gemfile" ]; then
+              echo "APP_DIR=$d" >> "$GITHUB_ENV"
+              echo "Found Rails at: $d"
+              exit 0
+            fi
+          done
+          echo "❌ Could not find Rails app directory." >&2
+          exit 1
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4.6'
+          bundler-cache: false
+
+      - name: Install gems
+        shell: bash
+        run: |
+          cd "$APP_DIR"
+          bundle config set path vendor/bundle
+          bundle install --jobs 4 --retry 3
+
+      - name: Prepare test DB (create/migrate & ensure schema.rb exists)
+        env:
+          RAILS_ENV: test
+          DATABASE_URL: postgres://rails:rails@localhost:5432/app_test
+          REDIS_URL: redis://localhost:6379/0
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$APP_DIR"
+          # Creates DB if needed, runs migrations, and loads/dumps schema.
+          bundle exec rails db:prepare
+          # In case you have zero migrations yet, make sure schema.rb exists:
+          if [ ! -f db/schema.rb ]; then
+            echo "No schema.rb yet; dumping empty schema."
+            bundle exec rails db:schema:dump
+          fi
+
+      - name: Run tests
+        env:
+          RAILS_ENV: test
+          DATABASE_URL: postgres://rails:rails@localhost:5432/app_test
+          REDIS_URL: redis://localhost:6379/0
+        shell: bash
+        run: |
+          cd "$APP_DIR"
+          bundle exec rails test
+
+      - name: Upload failed screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: ${{ env.APP_DIR }}/tmp/screenshots
+          if-no-files-found: ignore
