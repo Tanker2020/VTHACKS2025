@@ -13,7 +13,7 @@ on:
 
 jobs:
   scan_ruby:
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: backend/railsApp
@@ -28,7 +28,7 @@ jobs:
         run: bin/brakeman --no-pager
 
   scan_js:
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: backend/railsApp
@@ -43,7 +43,7 @@ jobs:
         run: bin/importmap audit
 
   lint:
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: backend/railsApp
@@ -58,7 +58,7 @@ jobs:
         run: bin/rubocop -f github
 
   test:
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: backend/railsApp
