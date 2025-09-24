@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1
-ARG RUBY_VERSION=3.4.0
+ARG RUBY_VERSION=3.4.6
 ARG DEBIAN_FRONTEND=noninteractive
 
 # ---------- build stage ----------
-FROM ruby:${RUBY_VERSION}-slim AS build
+FROM ruby:${RUBY_VERSION}-slim-bookworm AS build
 WORKDIR /app
 
 # Build deps for native gems (pg, nokogiri, etc.)
@@ -27,7 +27,7 @@ ENV RAILS_ENV=production
 RUN SECRET_KEY_BASE_DUMMY=1 bundle exec rake assets:precompile || true
 
 # ---------- runtime stage ----------
-FROM ruby:${RUBY_VERSION}-slim
+FROM ruby:${RUBY_VERSION}-slim-bookworm
 WORKDIR /app
 
 # Runtime libs only
