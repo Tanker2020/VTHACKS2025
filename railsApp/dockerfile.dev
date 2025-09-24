@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Install gems (use host-mounted Gemfile for cache friendliness if you want)
-COPY backend/railsApp/Gemfile backend/railsApp/Gemfile.lock ./
+COPY railsApp/Gemfile railsApp/Gemfile.lock ./
 RUN bundle install
 
 # Default: run rails dev server
