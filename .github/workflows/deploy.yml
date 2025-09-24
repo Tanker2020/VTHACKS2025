@@ -23,8 +23,6 @@ env:
   RAILS_DIR: railsApp
   PY_DIR: python
   COMPOSE_DIR: deploy
-  RAILS_DOCKERFILE: deploy/Dockerfile.railsApp     # case-sensitive
-  PY_DOCKERFILE: deploy/DockerFile.python
 
 jobs:
   build-push:
@@ -64,7 +62,7 @@ jobs:
             --cache-from type=registry,ref=$IMAGE_NS/rails:buildcache \
             --cache-to   type=registry,ref=$IMAGE_NS/rails:buildcache,mode=max \
             -t $IMAGE_NS/rails:${{ github.sha }} \
-            -f "$RAILS_DOCKERFILE" \
+            -f $RAILS_DIR/Dockerfile \
             $RAILS_DIR \
             --push
 
@@ -77,7 +75,7 @@ jobs:
             --cache-from type=registry,ref=$IMAGE_NS/agent:buildcache \
             --cache-to   type=registry,ref=$IMAGE_NS/agent:buildcache,mode=max \
             -t $IMAGE_NS/agent:${{ github.sha }} \
-            -f "$PY_DOCKERFILE" \
+            -f $PY_DIR/Dockerfile \
             $PY_DIR \
             --push
 
