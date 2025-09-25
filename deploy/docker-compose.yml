@@ -2,8 +2,15 @@ services:
   rails:
     image: ${IMAGE_NS}/rails:${TAG:-prod}
     env_file: /home/opc/srv/myapp/.env
+    environment:
+      # split redis DBs
+      REDIS_CACHE_URL: redis://redis:6379/0
+      REDIS_SIDEKIQ_URL: redis://redis:6379/1
+      REDIS_CABLE_URL: redis://redis:6379/2
+      # optional: keep a generic var if your code uses it
+      REDIS_URL: redis://redis:6379/1
     ports:
-      - "127.0.0.1:3000:3000"         # only local, nginx proxies to this
+      - "127.0.0.1:3000:3000"     # only local; nginx proxies to this
     depends_on:
       redis:
         condition: service_healthy
@@ -14,30 +21,39 @@ services:
       retries: 10
       start_period: 20s
     restart: always
-    pull_policy: always
-    # Optional niceties:
-    # logging:
-    #   driver: json-file
-    #   options:
-    #     max-size: "10m"
-    #     max-file: "3"
-    # deploy:
-    #   resources:
-    #     limits:
-    #       cpus: "2.0"
-    #       memory: "8g"
+    # pull_policy: always   # keep only if your Compose supports it
+
+  worker:
+    image: ${IMAGE_NS}/rails:${TAG:-prod}
+    command: bundle exec sidekiq
+    env_file: /home/opc/srv/myapp/.env
+    environment:
+      REDIS_SIDEKIQ_URL: redis://redis:6379/1
+      # if your sidekiq initializer reads REDIS_URL, also set:
+      REDIS_URL: redis://redis:6379/1
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      # sidekiq exposes a TSTP signal check poorly; simplest is process alive:
+      test: ["CMD-SHELL", "ps aux | grep '[s]idekiq' > /dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
 
   agent:
     image: ${IMAGE_NS}/agent:${TAG:-prod}
     env_file: /home/opc/srv/myapp/.env
+    environment:
+      REDIS_URL: redis://redis:6379/1
     depends_on:
       rails:
         condition: service_healthy
       redis:
         condition: service_healthy
     restart: always
-    pull_policy: always
-    # healthcheck (if your agent exposes one):
     # healthcheck:
     #   test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
     #   interval: 30s
@@ -47,11 +63,11 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # No external port in prod; keep it internal-only
+    # ports:
+    #   - "6379:6379"
     restart: always
     healthcheck:
-      # alpine uses /bin/sh; redis-cli is included in the official image
       test: ["CMD-SHELL", "redis-cli -u redis://127.0.0.1:6379 ping | grep PONG"]
       interval: 5s
       timeout: 3s
