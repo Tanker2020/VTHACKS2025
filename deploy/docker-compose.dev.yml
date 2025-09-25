@@ -1,12 +1,12 @@
 services:
   rails:
     build:
-      context: ../..
-      dockerfile: backend/railsApp/Dockerfile.dev
+      context: ../railsApp
+      dockerfile: Dockerfile.dev
     ports:
       - "3000:3000"
     env_file:
-      - ../../.env.dev     # optional; for dev-only vars
+      - ../.env.dev     # optional; for dev-only vars
     environment:
       RAILS_ENV: development
     volumes:
@@ -18,12 +18,12 @@ services:
 
   agent:
     build:
-      context: ../..
-      dockerfile: backend/python/Dockerfile
+      context: ../python
+      dockerfile: Dockerfile
     working_dir: /app
     command: python main.py
     env_file:
-      - ../../.env.dev     # add your agent’s dev vars here
+      - ../.env.dev     # add your agent’s dev vars here
     volumes:
       - ../python:/app     # live code
     depends_on:
