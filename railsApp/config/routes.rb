@@ -1,7 +1,7 @@
 require "sidekiq/web"
 
 Rails.application.routes.draw do
-  root "home#index
+  root "home#index"
 
 
 
@@ -34,4 +34,3 @@ Rails.application.routes.draw do
   # Defines the root path route ("/")
   # root "posts#index"
 end
-
