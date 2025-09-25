@@ -50,3 +50,10 @@ services:
     ports:
       - "6379:6379"
     restart: always
+    healthcheck:
+      # alpine uses /bin/sh; redis-cli is included in the official image
+      test: ["CMD-SHELL", "redis-cli -u redis://127.0.0.1:6379 ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
