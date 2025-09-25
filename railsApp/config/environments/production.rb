@@ -50,10 +50,10 @@ Rails.application.configure do
   config.cache_store = :redis_cache_store, {
     url: ENV.fetch("REDIS_CACHE_URL") { "redis://redis:6379/0" }
   }
-  
+
   # Replace the default in-process and non-durable queuing backend for Active Job.
   config.active_job.queue_adapter = :sidekiq
-  
+
   # Ignore bad email addresses and do not raise email delivery errors.
   # Set this to true and configure the email server for immediate delivery to raise delivery errors.
   # config.action_mailer.raise_delivery_errors = false
