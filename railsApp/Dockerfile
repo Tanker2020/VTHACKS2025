@@ -12,12 +12,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential git curl pkg-config libpq-dev libyaml-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Tell Bundler to install into /usr/local/bundle (not vendor/bundle)
+ENV BUNDLE_PATH=/usr/local/bundle \
+    BUNDLE_DEPLOYMENT=1 \
+    BUNDLE_WITHOUT="development test"
+
 # Gem layer (best cache)
 COPY Gemfile Gemfile.lock ./
 # Ensure lock supports arm64 (Ampere)
-RUN bundle lock --add-platform aarch64-linux || true
-ENV BUNDLE_DEPLOYMENT=1 BUNDLE_WITHOUT="development test"
-RUN bundle install --jobs=4 && rm -rf /usr/local/bundle/cache
+RUN bundle lock --add-platform aarch64-linux || true \
+ && bundle config set path "$BUNDLE_PATH" \
+ && bundle config set deployment 'true' \
+ && bundle config set without 'development test' \
+ && bundle install --jobs=4 \
+ && rm -rf "$BUNDLE_PATH"/cache
 
 # App code
 COPY . .
@@ -34,6 +42,13 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
       libpq5 libyaml-0-2 curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Same Bundler env in runtime
+ENV BUNDLE_PATH=/usr/local/bundle \
+    BUNDLE_DEPLOYMENT=1 \
+    BUNDLE_WITHOUT="development test" \
+    RAILS_ENV=production \
+    RACK_ENV=production
 
 # Copy gems and app from build stage
 COPY --from=build /usr/local/bundle /usr/local/bundle
