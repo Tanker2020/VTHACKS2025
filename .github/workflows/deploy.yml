@@ -130,7 +130,13 @@ jobs:
         working-directory: deploy
         env:
           RAILS_ENV: production
-        run: IMAGE_NS="$IMAGE_NS" TAG="$DEPLOY_TAG" docker compose run --rm rails bundle exec rake db:migrate
+        run: |
+          # Only run migrations if DATABASE_URL exists inside the rails container
+          if IMAGE_NS=${IMAGE_NS} TAG=${DEPLOY_TAG} docker compose run --rm rails sh -lc 'test -n "$DATABASE_URL"'; then
+            IMAGE_NS=${IMAGE_NS} TAG=${DEPLOY_TAG} docker compose run --rm rails bundle exec rake db:migrate
+          else
+            echo "DATABASE_URL not set; skipping db:migrate"
+          fi
 
       - name: Up services
         working-directory: deploy
