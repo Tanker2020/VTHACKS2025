@@ -1,4 +1,18 @@
+require "sidekiq/web"
+
 Rails.application.routes.draw do
+  if Rails.env.development?
+    # In dev: open access
+    mount Sidekiq::Web => "/sidekiq"
+  else
+    # In prod/test: protect with basic auth
+    Sidekiq::Web.use Rack::Auth::Basic do |username, password|
+      # hardcoded demo credentials: user=test, pass=test
+      ActiveSupport::SecurityUtils.secure_compare(username, "test") &
+        ActiveSupport::SecurityUtils.secure_compare(password, "test")
+    end
+    mount Sidekiq::Web => "/sidekiq"
+  end
   # Define your application routes per the DSL in https://guides.rubyonrails.org/routing.html
 
   # Reveal health status on /up that returns 200 if the app boots with no exceptions, otherwise 500.
@@ -12,3 +26,4 @@ Rails.application.routes.draw do
   # Defines the root path route ("/")
   # root "posts#index"
 end
+
