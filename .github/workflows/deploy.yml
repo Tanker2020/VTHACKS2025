@@ -123,17 +123,17 @@ jobs:
 
       # --- Deploy with compose (use prod tag by default) ---
       - name: Pull images for compose (prod)
-        working-directory: backend/deploy
+        working-directory: deploy
         run: IMAGE_NS="$IMAGE_NS" TAG="$DEPLOY_TAG" docker compose pull
 
       - name: DB migrate (rails)
-        working-directory: backend/deploy
+        working-directory: deploy
         env:
           RAILS_ENV: production
         run: IMAGE_NS="$IMAGE_NS" TAG="$DEPLOY_TAG" docker compose run --rm rails bundle exec rake db:migrate
 
       - name: Up services
-        working-directory: backend/deploy
+        working-directory: deploy
         run: IMAGE_NS="$IMAGE_NS" TAG="$DEPLOY_TAG" docker compose up -d
 
       - name: Health check
