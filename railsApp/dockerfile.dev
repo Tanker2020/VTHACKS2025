@@ -10,13 +10,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Dev deps (sqlite3 for dev DB, build tools for native gems)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      build-essential git curl pkg-config sqlite3 libsqlite3-dev \
-    && rm -rf /var/lib/apt/lists/*
+            build-essential git curl pkg-config sqlite3 libsqlite3-dev libyaml-dev \
+        && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 # Install gems (use host-mounted Gemfile for cache friendliness if you want)
-COPY railsApp/Gemfile railsApp/Gemfile.lock ./
+COPY Gemfile Gemfile.lock ./
 RUN bundle install
 
 # Default: run rails dev server
