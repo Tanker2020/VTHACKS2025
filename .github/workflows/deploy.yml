@@ -78,33 +78,6 @@ jobs:
             -f $PY_DIR/Dockerfile \
             $PY_DIR \
             --push
-
-      # ----- Rollback rotation: keep last prod as prev -----
-      - name: Rotate rails prod -> prev
-        continue-on-error: true
-        run: |
-          docker pull $IMAGE_NS/rails:prod || exit 0
-          docker tag  $IMAGE_NS/rails:prod $IMAGE_NS/rails:prev
-          docker push $IMAGE_NS/rails:prev
-
-      - name: Promote rails sha -> prod
-        run: |
-          docker pull $IMAGE_NS/rails:${{ github.sha }}
-          docker tag  $IMAGE_NS/rails:${{ github.sha }} $IMAGE_NS/rails:prod
-          docker push $IMAGE_NS/rails:prod
-
-      - name: Rotate agent prod -> prev
-        continue-on-error: true
-        run: |
-          docker pull $IMAGE_NS/agent:prod || exit 0
-          docker tag  $IMAGE_NS/agent:prod $IMAGE_NS/agent:prev
-          docker push $IMAGE_NS/agent:prev
-
-      - name: Promote agent sha -> prod
-        run: |
-          docker pull $IMAGE_NS/agent:${{ github.sha }}
-          docker tag  $IMAGE_NS/agent:${{ github.sha }} $IMAGE_NS/agent:prod
-          docker push $IMAGE_NS/agent:prod
   deploy:
     needs: build-push
     runs-on: self-hosted
