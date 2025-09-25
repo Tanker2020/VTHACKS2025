@@ -15,7 +15,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/up"]
       interval: 20s
       timeout: 5s
       retries: 10
@@ -68,7 +68,7 @@ services:
     #   - "6379:6379"
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -u redis://127.0.0.1:6379 ping | grep PONG"]
+      test: ["CMD-SHELL", "redis-cli -u redis://redis:6379 ping | grep PONG"]
       interval: 5s
       timeout: 3s
       retries: 10
