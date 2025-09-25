@@ -1,6 +1,14 @@
 require "sidekiq/web"
 
 Rails.application.routes.draw do
+  root "home#index
+
+
+
+
+
+
+  # Mount Sidekiq Web UI for monitoring at /sidekiq, protected by basic auth in non-development envs.
   if Rails.env.development?
     # In dev: open access
     mount Sidekiq::Web => "/sidekiq"
