@@ -83,9 +83,10 @@ jobs:
     runs-on: self-hosted
     permissions:
       contents: read
-      packages: read
+      packages: write
     env:
-      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || 'prod' }}
+      BUILD_TAG: ${{ github.sha }} # <-- always the fresh image
+      DEPLOY_TAG: prod
       IMAGE_NS: ${{ needs.build-push.outputs.image_ns }}
     steps:
       - uses: actions/checkout@v4
@@ -93,51 +94,49 @@ jobs:
       - name: Login to GHCR on VM
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-       # --- Rotate/prod-prev on the VM (arm64) ---
-      - name: Pull current prod if exists (ignore errors)
-        run: docker pull $IMAGE_NS/rails:prod || true
-
+      # --- Rotate/prod-prev on the VM (arm64) ---
       - name: Promote rails sha -> prod (and rotate)
         run: |
-          # pull the freshly built sha (arm64)
-          docker pull $IMAGE_NS/rails:${TAG}
-          # if prod exists, move it to prev
-          if docker image inspect $IMAGE_NS/rails:prod > /dev/null 2>&1; then
-            docker tag  $IMAGE_NS/rails:prod $IMAGE_NS/rails:prev
-            docker push $IMAGE_NS/rails:prev || true
+          set -euxo pipefail
+          echo "IMAGE_NS=$IMAGE_NS  BUILD_TAG=$BUILD_TAG"
+          # Pull the freshly built sha (arm64)
+          docker pull "$IMAGE_NS/rails:${BUILD_TAG}"
+          # If prod exists, move it to prev
+          if docker pull "$IMAGE_NS/rails:prod" >/dev/null 2>&1; then
+            docker tag  "$IMAGE_NS/rails:prod" "$IMAGE_NS/rails:prev"
+            docker push "$IMAGE_NS/rails:prev" || true
           fi
-          # tag the new sha as prod and push
-          docker tag  $IMAGE_NS/rails:${TAG} $IMAGE_NS/rails:prod
-          docker push $IMAGE_NS/rails:prod
-
-      - name: Pull current agent prod if exists (ignore errors)
-        run: docker pull $IMAGE_NS/agent:prod || true
+          # Tag sha -> prod and push
+          docker tag  "$IMAGE_NS/rails:${BUILD_TAG}" "$IMAGE_NS/rails:prod"
+          docker push "$IMAGE_NS/rails:prod"
 
       - name: Promote agent sha -> prod (and rotate)
         run: |
-          docker pull $IMAGE_NS/agent:${TAG}
-          if docker image inspect $IMAGE_NS/agent:prod > /dev/null 2>&1; then
-            docker tag  $IMAGE_NS/agent:prod $IMAGE_NS/agent:prev
-            docker push $IMAGE_NS/agent:prev || true
+          set -euxo pipefail
+          docker pull "$IMAGE_NS/agent:${BUILD_TAG}"
+          if docker pull "$IMAGE_NS/agent:prod" >/dev/null 2>&1; then
+            docker tag  "$IMAGE_NS/agent:prod" "$IMAGE_NS/agent:prev"
+            docker push "$IMAGE_NS/agent:prev" || true
           fi
-          docker tag  $IMAGE_NS/agent:${TAG} $IMAGE_NS/agent:prod
-          docker push $IMAGE_NS/agent:prod
+          docker tag  "$IMAGE_NS/agent:${BUILD_TAG}" "$IMAGE_NS/agent:prod"
+          docker push "$IMAGE_NS/agent:prod"
 
       # --- Deploy with compose (use prod tag by default) ---
       - name: Pull images for compose (prod)
         working-directory: backend/deploy
-        run: IMAGE_NS=${IMAGE_NS} TAG=prod docker compose pull
+        run: IMAGE_NS="$IMAGE_NS" TAG="$DEPLOY_TAG" docker compose pull
 
       - name: DB migrate (rails)
         working-directory: backend/deploy
         env:
           RAILS_ENV: production
-        run: IMAGE_NS=${IMAGE_NS} TAG=prod docker compose run --rm rails bundle exec rake db:migrate
+        run: IMAGE_NS="$IMAGE_NS" TAG="$DEPLOY_TAG" docker compose run --rm rails bundle exec rake db:migrate
 
       - name: Up services
         working-directory: backend/deploy
-        run: IMAGE_NS=${IMAGE_NS} TAG=prod docker compose up -d
+        run: IMAGE_NS="$IMAGE_NS" TAG="$DEPLOY_TAG" docker compose up -d
 
       - name: Health check
         run: |
+          set -euxo pipefail
           curl -fsS http://127.0.0.1:3000/health || (docker ps; docker logs $(docker ps -q --filter name=_rails_ | head -1); exit 1)
