@@ -3,8 +3,14 @@ name: CI
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'backend/railsApp/**'
+      - '.github/workflows/ci.yml'
   pull_request:
     branches: [ main ]
+    paths:
+      - 'backend/railsApp/**'
+      - '.github/workflows/ci.yml'
 
 permissions:
   contents: read
@@ -14,6 +20,9 @@ jobs:
   scan_ruby:
     name: scan_ruby
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/railsApp
     steps:
       - uses: actions/checkout@v4
 
@@ -55,6 +64,9 @@ jobs:
   scan_js:
     name: scan_js
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/railsApp
     steps:
       - uses: actions/checkout@v4
 
@@ -96,6 +108,9 @@ jobs:
   lint:
     name: lint
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/railsApp
     steps:
       - uses: actions/checkout@v4
 
@@ -137,6 +152,9 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/railsApp
     steps:
       - uses: actions/checkout@v4
 
