@@ -109,7 +109,7 @@ class OtherAccountPage extends StatelessWidget {
                       // Avatar
                       _buildGradientAvatar(context, size: 128),
                       const SizedBox(height: 12),
-                      Text(username.isNotEmpty ? username : 'Unknown User', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                      Text(username.isNotEmpty ? "Anonymous" : 'Unknown User', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 12),
 
                       // Stylized Nash Score text

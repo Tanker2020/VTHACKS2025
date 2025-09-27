@@ -4,12 +4,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:nash/main.dart';
+import 'package:nash/theme/app_theme.dart';
+import 'package:nash/widgets/gradient_app_bar.dart';
 import 'package:nash/pages/account_page.dart';
 
 // Simple toast helper (overlay) so we don't need an external package.
 void showToast(BuildContext context, String message, {bool isError = false, Duration duration = const Duration(seconds: 3)}) {
   final overlay = Overlay.of(context);
-  if (overlay == null) return;
 
   final theme = Theme.of(context);
   final entry = OverlayEntry(
@@ -23,7 +24,7 @@ void showToast(BuildContext context, String message, {bool isError = false, Dura
           top: true,
           child: Container(
             alignment: Alignment.topCenter,
-            child: Container(
+              child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
                 color: isError ? Colors.redAccent : Colors.black87,
@@ -130,6 +131,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
       return;
     }
 
+
     try {
       setState(() => _isLoading = true);
       // Await the sign-in call so network/auth errors are caught by this try/catch.
@@ -164,17 +166,17 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
             height: 88,
             width: 88,
             decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [theme.colorScheme.primary, theme.colorScheme.secondary]),
+              gradient: AppTheme.appBarGradient,
               shape: BoxShape.circle,
               boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 18, offset: const Offset(0, 8)),
+                BoxShadow(color: Colors.black.withOpacity(0.18), blurRadius: 22, offset: const Offset(0, 10)),
               ],
             ),
             child: Center(
               child: Icon(
-                Icons.person, // Displays the standard person icon
-                size: 50.0,   // Optional: Adjust the size of the icon
-                color: Colors.blue, // Optional: Set the color of the icon
+                Icons.person,
+                size: 48.0,
+                color: Colors.white,
               ),
             ),
           ),
@@ -243,24 +245,19 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
+      appBar: const GradientAppBar(title: Text('Welcome')),
       body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [theme.colorScheme.primary.withOpacity(0.06), theme.colorScheme.secondary.withOpacity(0.04)],
-          ),
-        ),
+        decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [theme.colorScheme.primary.withOpacity(0.03), theme.colorScheme.secondary.withOpacity(0.02)])),
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 48),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 _buildHeader(context),
-                const SizedBox(height: 22),
-                _buildForm(context),
                 const SizedBox(height: 18),
+                _buildForm(context),
+                const SizedBox(height: 12),
                 Text('By continuing you agree to our Terms & Privacy', style: theme.textTheme.bodySmall, textAlign: TextAlign.center),
               ],
             ),

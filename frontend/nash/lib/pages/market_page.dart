@@ -3,6 +3,8 @@ import 'package:nash/pages/market_builder.dart';
 import 'package:nash/pages/other_account_page.dart';
 import 'package:nash/data/mock_data.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:nash/widgets/top_banner.dart';
+import 'package:nash/theme/app_theme.dart';
 
 // Simple vertical dashed divider using CustomPainter
 class DashedVerticalDivider extends StatelessWidget {
@@ -166,6 +168,85 @@ class _MarketPageState extends State<MarketPage> {
     super.dispose();
   }
 
+  Future<void> _openPositionDialog(BuildContext context, Map<String, dynamic> product, {bool? initialIsLong}) async {
+    final amountController = TextEditingController();
+    bool isLong = initialIsLong ?? true;
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(builder: (context, setStateSB) {
+          return AlertDialog(
+            title: Text('Open Position — ${product['title']}'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: ChoiceChip(
+                        label: const Text('LONG'),
+                        selected: isLong,
+                        onSelected: (_) => setStateSB(() => isLong = true),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ChoiceChip(
+                        label: const Text('SHORT'),
+                        selected: !isLong,
+                        onSelected: (_) => setStateSB(() => isLong = false),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: amountController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(hintText: 'Number of shares', border: OutlineInputBorder()),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+              ElevatedButton(
+                onPressed: () {
+                  final text = amountController.text.trim();
+                  final qty = double.tryParse(text);
+                  if (qty == null || qty <= 0) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter a valid amount greater than 0')));
+                    return;
+                  }
+
+                  // update the in-memory mock DB counters and recompute price
+                  try {
+                    final id = product['id'] as int;
+                    final existing = mockAssets.firstWhere((a) => a['id'] == id, orElse: () => {});
+                    final currLong = (existing['long'] is num) ? (existing['long'] as num).toDouble() : 0.0;
+                    final currShort = (existing['short'] is num) ? (existing['short'] as num).toDouble() : 0.0;
+                    double newLong = currLong;
+                    double newShort = currShort;
+                    if (isLong) newLong = currLong + qty; else newShort = currShort + qty;
+                    updateAsset(id, {'long': newLong, 'short': newShort});
+                    if (mounted) setState(() {});
+                  } catch (e) {
+                    // fall back to non-persistent behavior
+                  }
+
+                  Navigator.of(context).pop();
+                  final side = isLong ? 'LONG' : 'SHORT';
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Opened $side position for ${product['title']} — $qty shares')));
+                },
+                child: const Text('Confirm'),
+              ),
+            ],
+          );
+        });
+      },
+    );
+  }
+
   void _openProduct(BuildContext context, Map<String, dynamic> product) {
     final isLoan = product['category'] == 'Open Loans' || product['loan_total'] != null;
     showModalBottomSheet<void>(
@@ -209,14 +290,14 @@ class _MarketPageState extends State<MarketPage> {
                         decoration: BoxDecoration(color: const Color.fromARGB(255, 71, 68, 68), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                            Text('Borrower', style: Theme.of(context).textTheme.bodySmall),
-                            Text(product['borrower_username'] ?? '—', style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold)),
+                            Text('Borrower'),
+                            Text(product['borrower_username'] ?? '—', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
                           ]),
                           const SizedBox(height: 8),
                           if (product['urgency'] != null) ...[
                             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                              Text('Urgency', style: Theme.of(context).textTheme.bodySmall),
-                              Text(product['urgency'].toString(), style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold)),
+                              Text('Urgency'),
+                              Text(product['urgency'].toString(), style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
                             ]),
                             const SizedBox(height: 8),
                           ],
@@ -312,21 +393,31 @@ class _MarketPageState extends State<MarketPage> {
                         style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
                       ),
                     ] else ...[
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${product['title']} added to cart')));
-                        },
-                        icon: const Icon(Icons.add_shopping_cart),
-                        label: const Text('Add to cart'),
-                        style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-                      ),
-                      const SizedBox(height: 12),
-                      OutlinedButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Close'),
-                        style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-                          ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: () => _openPositionDialog(context, product, initialIsLong: true),
+                                child: const Text('LONG'),
+                                style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: () => _openPositionDialog(context, product, initialIsLong: false),
+                                child: const Text('SHORT'),
+                                style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(48), backgroundColor: Colors.red),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('Close'),
+                          style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                        ),
                         ],
                       ],
                     ),
@@ -366,135 +457,153 @@ class _MarketPageState extends State<MarketPage> {
     return Scaffold(
       // allow Scaffold to resize when keyboard appears
       resizeToAvoidBottomInset: true,
-      appBar: AppBar(
-        title: const Text('Marketplace'),
-        centerTitle: true,
-        actions: [
-
-        ],
-      ),
-      body: AnimatedPadding(
-        duration: const Duration(milliseconds: 200),
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _searchController,
-                      decoration: InputDecoration(
-                        hintText: 'Search products',
-                        prefixIcon: const Icon(Icons.search),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        isDense: true,
-                      ),
-                      onChanged: (_) => setState(() {}),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  PopupMenuButton<String>(
-                    icon: const Icon(Icons.sort),
-                    tooltip: 'Sort',
-                    onSelected: (v) => setState(() => _selectedSort = v),
-                    itemBuilder: (_) => sorts
-                        .map((s) => PopupMenuItem(value: s, child: Row(children: [Expanded(child: Text(s)), if (_selectedSort == s) const Icon(Icons.check, size: 16)])))
-                        .toList(),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                height: 40,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: categories.map((c) {
-                      final selected = c == _selectedCategory;
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 6.0),
-                        child: ChoiceChip(
-                          label: Text(c),
-                          selected: selected,
-                          onSelected: (_) => setState(() {
-                            // enforce that one category must always be selected
-                            _selectedCategory = c;
-                          }),
+      body: Stack(
+        children: [
+          Positioned(top: 0, left: 0, right: 0, child: TopBanner()),
+          Padding(
+            padding: const EdgeInsets.only(top: 120),
+            child: AnimatedPadding(
+              duration: const Duration(milliseconds: 200),
+              padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _searchController,
+                            decoration: InputDecoration(
+                              hintText: 'Search products',
+                              prefixIcon: const Icon(Icons.search),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                              isDense: true,
+                            ),
+                            onChanged: (_) => setState(() {}),
+                          ),
                         ),
-                      );
-                    }).toList(),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Expanded(
-                child: items.isEmpty
-                    ? Center(child: Text('No products found', style: theme.textTheme.titleMedium))
-                    : ListView.separated(
-                            itemCount: items.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 8),
-                            itemBuilder: (context, index) {
-                              // We'll render Open Loans as full-width cards when that category is selected.
+                        const SizedBox(width: 8),
+                        PopupMenuButton<String>(
+                          icon: const Icon(Icons.sort),
+                          tooltip: 'Sort',
+                          onSelected: (v) => setState(() => _selectedSort = v),
+                          itemBuilder: (_) => sorts
+                              .map((s) => PopupMenuItem(value: s, child: Row(children: [Expanded(child: Text(s)), if (_selectedSort == s) const Icon(Icons.check, size: 16)])))
+                              .toList(),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 40,
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: categories.map((c) {
+                            final selected = c == _selectedCategory;
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 6.0),
+                              child: ChoiceChip(
+                                label: Text(c),
+                                selected: selected,
+                                onSelected: (_) => setState(() {
+                                  // enforce that one category must always be selected
+                                  _selectedCategory = c;
+                                }),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: items.isEmpty
+                          ? Center(child: Text('No products found', style: theme.textTheme.titleMedium))
+                          : ListView.separated(
+                              itemCount: items.length,
+                              separatorBuilder: (_, __) => const SizedBox(height: 8),
+                              itemBuilder: (context, index) {
+                                // We'll render Open Loans as full-width cards when that category is selected.
 
-                              // If Open Loans category is selected, show a horizontal Wrap for those items.
-                              if (_selectedCategory == 'Open Loans') {
-                                // Render the single loan item for this row. Previously we generated the
-                                // entire openLoans list inside each itemBuilder call which duplicated
-                                // the UI; now we use the current index to show exactly one card.
-                                final p = items[index];
-                                final borrowerId = p['borrower_id'] as String?;
-                                final user = borrowerId != null ? findUserById(borrowerId) : null;
-                                final score = user != null && user['nashScore'] != null ? user['nashScore'] as int : 0;
-                                final displayUsername = p['display_username'] ?? p['title'];
-                                Color bandColor;
-                                if (score < 34) bandColor = Colors.red;
-                                else if (score < 67) bandColor = Colors.yellow.shade700;
-                                else bandColor = Colors.green;
+                                // If Open Loans category is selected, show a horizontal Wrap for those items.
+                                if (_selectedCategory == 'Open Loans') {
+                                  // Render the single loan item for this row. Previously we generated the
+                                  // entire openLoans list inside each itemBuilder call which duplicated
+                                  // the UI; now we use the current index to show exactly one card.
+                                  final p = items[index];
+                                  final borrowerId = p['borrower_id'] as String?;
+                                  final user = borrowerId != null ? findUserById(borrowerId) : null;
+                                  final score = user != null && user['nashScore'] != null ? user['nashScore'] as int : 0;
+                                  Color bandColor;
+                                  if (score < 34) bandColor = Colors.red;
+                                  else if (score < 67) bandColor = Colors.yellow.shade700;
+                                  else bandColor = Colors.green;
 
-                                return Card(
-                                  color: Colors.black,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                  child: InkWell(
-                                    onTap: () => _openProduct(context, p),
-                                    child: Container(
-                                      width: double.infinity,
-                                      padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 16.0),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(displayUsername, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: Colors.white)),
-                                          const SizedBox(height: 6),
-                                          Text('\$${double.parse(p['price']).toStringAsFixed(0)}', style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: Colors.white70)),
-                                          const SizedBox(height: 10),
-                                          Text('Score: $score', style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: bandColor)),
-                                        ],
+                                  return Card(
+                                    color: Theme.of(context).cardColor,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    child: InkWell(
+                                      onTap: () => _openProduct(context, p),
+                                      child: Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.symmetric(vertical: 14.0, horizontal: 14.0),
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              width: 56,
+                                              height: 56,
+                                              decoration: BoxDecoration(gradient: AppTheme.appBarGradient, shape: BoxShape.circle),
+                                              alignment: Alignment.center,
+                                              child: Text(p['title'][0].toUpperCase(), style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.bold)),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                                Text(p['title'], style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                                                const SizedBox(height: 2),
+                                                Text('\$${((p['loan_total'] as num?)?.toInt() ?? 0)} · Score: $score', style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white)),
+                                              ]),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Column(
+                                              children: [
+                                                Container(width: 12, height: 12, decoration: BoxDecoration(color: bandColor, shape: BoxShape.circle)),
+                                                const SizedBox(height: 6),
+                                                Icon(Icons.chevron_right, color: Colors.white),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
+                                  );
+                                }
+                                // Fallback: render other items in the vertical list as before.
+                                final p = items[index];
+                                return ListTile(
+                                  onTap: () => _openProduct(context, p),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                  title: Text(p['title'], style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                                  trailing: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text('\$${p['price']}', style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold)),
+                                      const SizedBox(height: 6),
+                                    ],
                                   ),
                                 );
-                              }
-                              // Fallback: render other items in the vertical list as before.
-                              final p = items[index];
-                              return ListTile(
-                                onTap: () => _openProduct(context, p),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                title: Text(p['title'], style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),                                trailing: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text('\$${p['price']}', style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold)),
-                                    const SizedBox(height: 6),
-                                  ],
-                                ),
-                              );
-                            },
-                      ),
+                              },
+                            ),
+                    ),
+                  ],
+                ),
               ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => Navigator.of(context).push(

@@ -1,6 +1,6 @@
 // removed unused import 'dart:typed_data'
 import 'package:flutter/material.dart';
-import 'package:nash/pages/market_page.dart';
+import 'package:nash/widgets/top_banner.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:nash/main.dart';
 import 'package:nash/pages/login.dart';
@@ -63,12 +63,14 @@ class AccountPage extends StatefulWidget {
   State<AccountPage> createState() => _AccountPageState();
 }
 
-class _AccountPageState extends State<AccountPage> {
+class _AccountPageState extends State<AccountPage> with SingleTickerProviderStateMixin {
   final _usernameController = TextEditingController();
   final _websiteController = TextEditingController();
 
   var _loading = true;
   int? _nashScore;
+  late final AnimationController _animController;
+  late final Animation<double> _avatarScale;
 
   /// Called once a user id is received within `onAuthenticated()`
   Future<void> _getProfile() async {
@@ -175,6 +177,9 @@ class _AccountPageState extends State<AccountPage> {
   @override
   void initState() {
     super.initState();
+    _animController = AnimationController(vsync: this, duration: const Duration(seconds: 3));
+    _avatarScale = Tween<double>(begin: 0.96, end: 1.03).animate(CurvedAnimation(parent: _animController, curve: Curves.easeInOut));
+    _animController.repeat(reverse: true);
     _getProfile();
   }
 
@@ -182,6 +187,7 @@ class _AccountPageState extends State<AccountPage> {
   void dispose() {
     _usernameController.dispose();
     _websiteController.dispose();
+    _animController.dispose();
     super.dispose();
   }
 
@@ -190,121 +196,89 @@ class _AccountPageState extends State<AccountPage> {
     final theme = Theme.of(context);
     return Scaffold(
       body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Colors.deepPurple, Colors.white12],
-          ),
-        ),
+        decoration: BoxDecoration(color: theme.colorScheme.background),
         child: Stack(
           children: [
-            // Top banner with centered plus icon
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                height: 64,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.deepPurple, theme.colorScheme.secondary],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 8, offset: const Offset(0, 4))],
-                ),
-                child: SafeArea(
-                  child: Stack(
-                    children: [
-                      Positioned(
-                        top: 12,
-                        left: 12,
-                        child: GestureDetector(
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const AccountPage()),
-                          ),
-                          child: CircleAvatar(
-                            radius: 18,
-                            backgroundColor: Colors.white24,
-                            child: const Icon(
-                              Icons.account_circle_outlined,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      Positioned(
-                        top: 8,
-                        right: 8,
-                        child: IconButton(
-                          onPressed: () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const MarketPage()),
-                          ),
-                          icon: const Icon(Icons.storefront_outlined, size: 28, color: Colors.white),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+            // Top banner
+            Positioned(top: 0, left: 0, right: 0, child: TopBanner()),
 
             Positioned.fill(
-              top: 160,
+              top: 140,
               child: Center(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Profile picture (centered below banner)
-                      Container(
-                        width: 128,
-                        height: 128,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: LinearGradient(
-                            colors: [Colors.red, Colors.white],
-                            begin: Alignment.topRight,
-                            end: Alignment.bottomLeft,
+                      // Elevated profile card
+                      Card(
+                        elevation: 12,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 18.0, vertical: 18.0),
+                          child: Column(
+                            children: [
+                              // Profile picture with subtle scale animation
+                              ScaleTransition(
+                                scale: _avatarScale,
+                                child: Container(
+                                  width: 128,
+                                  height: 128,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    gradient: LinearGradient(colors: [theme.colorScheme.primary, theme.colorScheme.secondary], begin: Alignment.topRight, end: Alignment.bottomLeft),
+                                    boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 12, offset: const Offset(0, 6))],
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    (_usernameController.text.isNotEmpty ? _usernameController.text[0].toUpperCase() : 'U'),
+                                    style: theme.textTheme.headlineLarge?.copyWith(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 48),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 350),
+                                child: Text(
+                                  _usernameController.text.isNotEmpty ? _usernameController.text : 'Unknown User',
+                                  key: ValueKey<String>(_usernameController.text),
+                                  style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 400),
+                                child: Text(
+                                  '${_nashScore != null ? _nashScore.toString() : '—'} NASH',
+                                  key: ValueKey<int?>(_nashScore),
+                                  style: theme.textTheme.headlineSmall?.copyWith(color: theme.colorScheme.primary, fontWeight: FontWeight.bold),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  ElevatedButton.icon(
+                                    onPressed: _loading ? null : () => _showEditProfileDialog(),
+                                    icon: const Icon(Icons.edit, size: 18),
+                                    label: const Text('Edit Profile'),
+                                    style: ElevatedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12)),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  OutlinedButton(
+                                    onPressed: _signOut,
+                                    child: const Text('Sign Out'),
+                                    style: OutlinedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12)),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
-                          boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 8, offset: const Offset(0, 4))],
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          (_usernameController.text.isNotEmpty ? _usernameController.text[0].toUpperCase() : 'U'),
-                          style: theme.textTheme.headlineLarge?.copyWith(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 48),
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      Text(
-                        _usernameController.text.isNotEmpty ? _usernameController.text : 'Unknown User',
-                        style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 6),
-                      // Stylized Nash Score text
-                      Text.rich(
-                        TextSpan(children: [
-                            TextSpan(text: _nashScore != null ? _nashScore.toString() : '—', style: theme.textTheme.headlineSmall?.copyWith(color: theme.colorScheme.primary, fontWeight: FontWeight.bold)),
-                          TextSpan(text: ' NASH', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onBackground.withOpacity(0.7), letterSpacing: 1.2)),
-                        ]),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 12),
 
-                      // Edit Profile button
-                      ElevatedButton.icon(
-                        onPressed: _loading ? null : () => _showEditProfileDialog(),
-                        icon: const Icon(Icons.edit, size: 18),
-                        label: const Text('Edit Username'),
-                        style: ElevatedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-                      ),
-
-                      TextButton(onPressed: _signOut, child: const Text('Sign Out')),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 18),
 
                       // Tab container with 3 tabs (Posts / Info / Settings)
                       SizedBox(

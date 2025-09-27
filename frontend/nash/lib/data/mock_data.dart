@@ -63,7 +63,9 @@ List<Map<String, dynamic>> mockAssets = [
     'id': 1,
     'type': 'loan',
     'title': 'Loan Request — Community Garden',
-    'price': '500.00',
+    'price': '0.50',
+    'long': 1,
+    'short': 1,
     'category': 'Open Loans',
     'urgency': 'Normal',
     'loan_total': 500.0,
@@ -76,7 +78,9 @@ List<Map<String, dynamic>> mockAssets = [
     'id': 2,
     'type': 'loan',
     'title': 'Loan Request — App Hosting',
-    'price': '800.00',
+    'price': '0.50',
+    'long': 1,
+    'short': 1,
     'category': 'Open Loans',
     'urgency': 'High',
     'loan_total': 800.0,
@@ -89,7 +93,9 @@ List<Map<String, dynamic>> mockAssets = [
     'id': 3,
     'type': 'loan',
     'title': 'Loan Request — Market Research',
-    'price': '350.00',
+    'price': '0.50',
+    'long': 1,
+    'short': 1,
     'category': 'Open Loans',
     'urgency': 'Low',
     'loan_total': 350.0,
@@ -103,7 +109,9 @@ List<Map<String, dynamic>> mockAssets = [
     'id': 4,
     'type': 'prediction',
     'title': 'Prediction — BTC Price Surge',
-    'price': '9.99',
+    'price': '0.50',
+    'long': 1,
+    'short': 1,
     'category': 'Predictions',
     'urgency': 'Normal',
     'borrower_id': null,
@@ -122,7 +130,9 @@ List<Map<String, dynamic>> mockAssets = [
     'id': 5,
     'type': 'prediction',
     'title': 'Prediction — Election Outcome',
-    'price': '12.00',
+    'price': '0.50',
+    'long': 1,
+    'short': 1,
     'category': 'Predictions',
     'urgency': 'Normal',
     'borrower_id': null,
@@ -141,7 +151,9 @@ List<Map<String, dynamic>> mockAssets = [
     'id': 6,
     'type': 'loan',
     'title': 'Loan Request — Seed Funding',
-    'price': '1200.00',
+    'price': '0.50',
+    'long': 1,
+    'short': 1,
     'category': 'Open Loans',
     'urgency': 'High',
     'loan_total': 1200.0,
@@ -154,7 +166,9 @@ List<Map<String, dynamic>> mockAssets = [
     'id': 7,
     'type': 'prediction',
     'title': 'Prediction — Sports Upset',
-    'price': '4.50',
+    'price': '0.50',
+    'long': 1,
+    'short': 1,
     'category': 'Other',
     'urgency': 'Low',
     'borrower_id': null,
@@ -172,7 +186,9 @@ List<Map<String, dynamic>> mockAssets = [
     'id': 8,
     'type': 'loan',
     'title': 'Loan Request — Equipment',
-    'price': '950.00',
+    'price': '0.50',
+    'long': 1,
+    'short': 1,
     'category': 'Open Loans',
     'urgency': 'Normal',
     'loan_total': 950.0,
@@ -185,7 +201,9 @@ List<Map<String, dynamic>> mockAssets = [
     'id': 9,
     'type': 'prediction',
     'title': 'Prediction — Tech Adoption',
-    'price': '7.25',
+    'price': '0.50',
+    'long': 1,
+    'short': 1,
     'category': 'Predictions',
     'urgency': 'Normal',
     'borrower_id': null,
@@ -203,7 +221,9 @@ List<Map<String, dynamic>> mockAssets = [
     'id': 10,
     'type': 'loan',
     'title': 'Loan Request — Expansion',
-    'price': '2200.00',
+    'price': '0.50',
+    'long': 1,
+    'short': 1,
     'category': 'Open Loans',
     'urgency': 'High',
     'loan_total': 2200.0,
@@ -216,7 +236,9 @@ List<Map<String, dynamic>> mockAssets = [
     'id': 11,
     'type': 'prediction',
     'title': 'Prediction — Weather Event',
-    'price': '3.99',
+    'price': '0.50',
+    'long': 1,
+    'short': 1,
     'category': 'Other',
     'urgency': 'Low',
     'borrower_id': null,
@@ -234,7 +256,9 @@ List<Map<String, dynamic>> mockAssets = [
     'id': 12,
     'type': 'loan',
     'title': 'Loan Request — Community Event',
-    'price': '400.00',
+    'price': '0.50',
+    'long': 1,
+    'short': 1,
     'category': 'Open Loans',
     'urgency': 'Normal',
     'loan_total': 400.0,
@@ -244,6 +268,20 @@ List<Map<String, dynamic>> mockAssets = [
     'borrower_id': 'user-1000',
   },
 ];
+
+/// Compute a price double from long/short counts.
+double computePriceFromSides(Map<String, dynamic> asset) {
+  final l = (asset['long'] is num) ? (asset['long'] as num).toDouble() : 0.0;
+  final s = (asset['short'] is num) ? (asset['short'] as num).toDouble() : 0.0;
+  final denom = l + s;
+  if (denom <= 0) return 0.5;
+  return l / denom;
+}
+
+String computePriceString(Map<String, dynamic> asset) {
+  final p = computePriceFromSides(asset);
+  return p.toStringAsFixed(2);
+}
 
 Map<String, dynamic>? findUserById(String id) {
   // id is non-nullable; return null if no user found
@@ -263,6 +301,11 @@ Map<String, dynamic> addAsset(Map<String, dynamic> asset) {
   final nextId = maxId + 1;
   final Map<String, dynamic> toAdd = Map<String, dynamic>.from(asset);
   toAdd['id'] = nextId;
+  // ensure long/short counters exist
+  if (!toAdd.containsKey('long')) toAdd['long'] = 1;
+  if (!toAdd.containsKey('short')) toAdd['short'] = 1;
+  // compute price from long/short
+  toAdd['price'] = computePriceString(toAdd);
   mockAssets.add(toAdd);
   return toAdd;
 }
@@ -272,6 +315,11 @@ Map<String, dynamic>? updateAsset(int id, Map<String, dynamic> changes) {
   final idx = mockAssets.indexWhere((a) => a['id'] == id);
   if (idx == -1) return null;
   final merged = Map<String, dynamic>.from(mockAssets[idx])..addAll(changes);
+  // ensure long/short default if missing
+  if (!merged.containsKey('long')) merged['long'] = mockAssets[idx]['long'] ?? 1;
+  if (!merged.containsKey('short')) merged['short'] = mockAssets[idx]['short'] ?? 1;
+  // recompute price from sides
+  merged['price'] = computePriceString(merged);
   mockAssets[idx] = merged;
   return merged;
 }
@@ -287,7 +335,10 @@ Map<String, dynamic>? fulfillLoan(int id) {
   asset['category'] = 'Predictions';
   // set price of the new prediction to the loan total (if available)
   if (loanTotal != null) {
-    asset['price'] = (loanTotal is double) ? loanTotal.toStringAsFixed(2) : loanTotal.toString();
+    // Initialize long/short from loanTotal if desired, otherwise set defaults and compute
+    asset['long'] = asset['long'] ?? 1;
+    asset['short'] = asset['short'] ?? 1;
+    asset['price'] = computePriceString(asset);
   }
   // remove loan-specific fields
   asset.remove('loan_total');
