@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:nash/data/mock_data.dart';
+import 'package:nash/widgets/gradient_app_bar.dart';
 
 class MarketBuilderPage extends StatefulWidget {
   const MarketBuilderPage({super.key});
@@ -90,10 +91,21 @@ class _MarketBuilderPageState extends State<MarketBuilderPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Create Market Request')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
+      appBar: const GradientAppBar(title: Text('Create Market Request')),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              theme.colorScheme.primary.withOpacity(0.03),
+              theme.colorScheme.secondary.withOpacity(0.02),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -181,6 +193,7 @@ class _MarketBuilderPageState extends State<MarketBuilderPage> {
                 ),
               ),
             ],
+          ),
           ),
         ),
       ),

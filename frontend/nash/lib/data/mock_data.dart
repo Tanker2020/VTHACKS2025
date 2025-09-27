@@ -1,6 +1,6 @@
 // Centralized mock "databases" for local development
 
-const List<Map<String, dynamic>> mockUsers = [
+List<Map<String, dynamic>> mockUsers = [
   {
     'id': 'user-1000',
     'username': 'alice',
@@ -9,6 +9,7 @@ const List<Map<String, dynamic>> mockUsers = [
     'followers': 120,
     'following': 34,
     'nashScore': 84,
+    'balance': 1000.0,
   },
   {
     'id': 'user-1001',
@@ -18,6 +19,7 @@ const List<Map<String, dynamic>> mockUsers = [
     'followers': 54,
     'following': 12,
     'nashScore': 66,
+    'balance': 850.0,
   },
   {
     'id': 'user-1002',
@@ -27,6 +29,7 @@ const List<Map<String, dynamic>> mockUsers = [
     'followers': 240,
     'following': 88,
     'nashScore': 92,
+    'balance': 420.0,
   },
   {
     'id': 'user-1003',
@@ -36,6 +39,7 @@ const List<Map<String, dynamic>> mockUsers = [
     'followers': 18,
     'following': 6,
     'nashScore': 48,
+    'balance': 230.0,
   },
   {
     'id': 'user-1004',
@@ -45,6 +49,7 @@ const List<Map<String, dynamic>> mockUsers = [
     'followers': 310,
     'following': 110,
     'nashScore': 95,
+    'balance': 1500.0,
   },
   {
     'id': 'user-1005',
@@ -54,8 +59,113 @@ const List<Map<String, dynamic>> mockUsers = [
     'followers': 8,
     'following': 2,
     'nashScore': 40,
+    'balance': 75.0,
   },
 ];
+
+// Current mock signed-in user id for demo purposes
+String currentMockUserId = 'user-1000';
+
+// Positions store
+List<Map<String, dynamic>> mockPositions = [];
+
+int _nextPositionId() {
+  var maxId = 0;
+  for (final p in mockPositions) {
+    final v = p['id'];
+    if (v is int && v > maxId) maxId = v;
+  }
+  return maxId + 1;
+}
+
+Map<String, dynamic>? findUserRefById(String id) {
+  final idx = mockUsers.indexWhere((u) => u['id'] == id);
+  if (idx == -1) return null;
+  return mockUsers[idx];
+}
+
+bool adjustUserBalance(String userId, double delta) {
+  final user = findUserRefById(userId);
+  if (user == null) return false;
+  final bal = (user['balance'] is num) ? (user['balance'] as num).toDouble() : 0.0;
+  final newBal = bal + delta;
+  if (newBal < 0) return false;
+  user['balance'] = newBal;
+  return true;
+}
+
+Map<String, dynamic>? createPosition(String userId, int assetId, String side, double qty, double entryPrice) {
+  // cost to open = qty * entryPrice
+  final cost = qty * entryPrice;
+  final ok = adjustUserBalance(userId, -cost);
+  if (!ok) return null;
+  final pos = {
+    'id': _nextPositionId(),
+    'userId': userId,
+    'assetId': assetId,
+    'side': side,
+    'qty': qty,
+    'entryPrice': entryPrice,
+    'openAt': DateTime.now().toIso8601String(),
+    'status': 'open',
+  };
+  mockPositions.add(pos);
+  // update asset long/short counters
+  final aidx = mockAssets.indexWhere((a) => a['id'] == assetId);
+  if (aidx != -1) {
+    final asset = Map<String, dynamic>.from(mockAssets[aidx]);
+    final currLong = (asset['long'] is num) ? (asset['long'] as num).toDouble() : 0.0;
+    final currShort = (asset['short'] is num) ? (asset['short'] as num).toDouble() : 0.0;
+    if ((side.toLowerCase()) == 'long') {
+      asset['long'] = currLong + qty;
+    } else {
+      asset['short'] = currShort + qty;
+    }
+    asset['price'] = computePriceString(asset);
+    mockAssets[aidx] = asset;
+  }
+  return pos;
+}
+
+Map<String, dynamic>? findPositionById(int id) {
+  final idx = mockPositions.indexWhere((p) => p['id'] == id);
+  if (idx == -1) return null;
+  return mockPositions[idx];
+}
+
+bool closePosition(int id) {
+  final idx = mockPositions.indexWhere((p) => p['id'] == id);
+  if (idx == -1) return false;
+  final pos = Map<String, dynamic>.from(mockPositions[idx]);
+  if (pos['status'] != 'open') return false;
+  final assetId = pos['assetId'] as int;
+  final assetIdx = mockAssets.indexWhere((a) => a['id'] == assetId);
+  if (assetIdx == -1) return false;
+  final asset = mockAssets[assetIdx];
+  final currentPrice = (asset['price'] is String) ? double.tryParse(asset['price']) ?? computePriceFromSides(asset) : (asset['price'] as num).toDouble();
+  final qty = (pos['qty'] is num) ? (pos['qty'] as num).toDouble() : 0.0;
+  // credit user with qty * currentPrice (sell proceeds)
+  final userId = pos['userId'] as String;
+  adjustUserBalance(userId, qty * currentPrice);
+  // decrement asset counters for this closed position
+  final a = Map<String, dynamic>.from(mockAssets[assetIdx]);
+  final currLong = (a['long'] is num) ? (a['long'] as num).toDouble() : 0.0;
+  final currShort = (a['short'] is num) ? (a['short'] as num).toDouble() : 0.0;
+  if ((pos['side'] as String).toLowerCase() == 'long') {
+    a['long'] = (currLong - qty) < 0 ? 0 : (currLong - qty);
+  } else {
+    a['short'] = (currShort - qty) < 0 ? 0 : (currShort - qty);
+  }
+  a['price'] = computePriceString(a);
+  mockAssets[assetIdx] = a;
+  // mark closed and record close info
+  mockPositions[idx]['status'] = 'closed';
+  mockPositions[idx]['closedAt'] = DateTime.now().toIso8601String();
+  mockPositions[idx]['closePrice'] = currentPrice;
+  return true;
+}
+
+List<Map<String, dynamic>> getUserPositions(String userId) => mockPositions.where((p) => p['userId'] == userId).toList();
 
 List<Map<String, dynamic>> mockAssets = [
   // Loans

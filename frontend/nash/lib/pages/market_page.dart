@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:nash/pages/market_builder.dart';
 import 'package:nash/pages/other_account_page.dart';
+import 'package:nash/pages/login.dart' show showToast;
+import 'package:nash/pages/positions_page.dart';
 import 'package:nash/data/mock_data.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:nash/widgets/top_banner.dart';
@@ -215,28 +217,36 @@ class _MarketPageState extends State<MarketPage> {
                   final text = amountController.text.trim();
                   final qty = double.tryParse(text);
                   if (qty == null || qty <= 0) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter a valid amount greater than 0')));
+                    showToast(context, 'Enter a valid amount greater than 0', isError: true);
                     return;
                   }
 
-                  // update the in-memory mock DB counters and recompute price
+                  // Use the mock DB createPosition helper which will adjust user balance.
                   try {
                     final id = product['id'] as int;
+                    final entryPrice = (product['price'] is String) ? double.tryParse(product['price']) ?? computePriceFromSides(product) : (product['price'] as num).toDouble();
+                    final userId = currentMockUserId;
+                    final sideStr = isLong ? 'LONG' : 'SHORT';
+                    final pos = createPosition(userId, id, sideStr, qty, entryPrice);
+                    if (pos == null) {
+                      // insufficient balance or other failure
+                      showToast(context, 'Insufficient balance to open position', isError: true);
+                      return;
+                    }
+                    // Also increment the asset long/short counters so price updates visually
                     final existing = mockAssets.firstWhere((a) => a['id'] == id, orElse: () => {});
                     final currLong = (existing['long'] is num) ? (existing['long'] as num).toDouble() : 0.0;
                     final currShort = (existing['short'] is num) ? (existing['short'] as num).toDouble() : 0.0;
-                    double newLong = currLong;
-                    double newShort = currShort;
-                    if (isLong) newLong = currLong + qty; else newShort = currShort + qty;
+                    final newLong = isLong ? currLong + qty : currLong;
+                    final newShort = isLong ? currShort : currShort + qty;
                     updateAsset(id, {'long': newLong, 'short': newShort});
                     if (mounted) setState(() {});
-                  } catch (e) {
-                    // fall back to non-persistent behavior
-                  }
 
-                  Navigator.of(context).pop();
-                  final side = isLong ? 'LONG' : 'SHORT';
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Opened $side position for ${product['title']} — $qty shares')));
+                    Navigator.of(context).pop();
+                    showToast(context, 'Opened ${isLong ? 'LONG' : 'SHORT'} position for ${product['title']} — $qty');
+                  } catch (e) {
+                    showToast(context, 'Failed to open position', isError: true);
+                  }
                 },
                 child: const Text('Confirm'),
               ),
@@ -280,7 +290,7 @@ class _MarketPageState extends State<MarketPage> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(product['title'], style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-                        Text('\$${product['price']}', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Theme.of(context).colorScheme.primary)),
+                        Text('\$${product['loan_total']}', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Theme.of(context).colorScheme.primary)),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -302,7 +312,6 @@ class _MarketPageState extends State<MarketPage> {
                             const SizedBox(height: 8),
                           ],
                           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                            Text('Raised: \$${(product['loan_raised'] ?? 0).toStringAsFixed(2)}'),
                             Text('Goal: \$${(product['loan_total'] ?? 0).toStringAsFixed(2)}'),
                           ]),
                           const SizedBox(height: 8),
@@ -340,9 +349,8 @@ class _MarketPageState extends State<MarketPage> {
                           // require a single full donation: compute remaining and confirm
                           final loanTotal = (product['loan_total'] as num?)?.toDouble() ?? 0.0;
                           final loanRaised = (product['loan_raised'] as num?)?.toDouble() ?? 0.0;
-                          final remaining = (loanTotal - loanRaised) > 0 ? (loanTotal - loanRaised) : 0.0;
 
-                          if (remaining <= 0) {
+                          if (loanRaised >= loanTotal) {
                             // already fulfilled — ensure it's converted
                             final res = fulfillLoan(product['id'] as int);
                             if (res != null) setState(() {});
@@ -355,10 +363,10 @@ class _MarketPageState extends State<MarketPage> {
                             context: context,
                             builder: (context) => AlertDialog(
                               title: const Text('One-time donation'),
-                              content: Text('This loan requires a single full donation of \$${remaining.toStringAsFixed(2)} to be fulfilled. Do you want to donate the full amount?'),
+                              content: Text('This loan requires a single full donation of \$${loanTotal.toStringAsFixed(2)} to be fulfilled. Do you want to donate the full amount?'),
                               actions: [
                                 TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
-                                ElevatedButton(onPressed: () => Navigator.of(context).pop(true), child: Text('Donate \$${remaining.toStringAsFixed(2)}')),
+                                ElevatedButton(onPressed: () => Navigator.of(context).pop(true), child: Text('Donate \$${loanTotal.toStringAsFixed(2)}')),
                               ],
                             ),
                           );
@@ -457,6 +465,7 @@ class _MarketPageState extends State<MarketPage> {
     return Scaffold(
       // allow Scaffold to resize when keyboard appears
       resizeToAvoidBottomInset: true,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: Stack(
         children: [
           Positioned(top: 0, left: 0, right: 0, child: TopBanner()),
@@ -564,7 +573,7 @@ class _MarketPageState extends State<MarketPage> {
                                               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                                 Text(p['title'], style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
                                                 const SizedBox(height: 2),
-                                                Text('\$${((p['loan_total'] as num?)?.toInt() ?? 0)} · Score: $score', style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white)),
+                                                Text('\$${((p['loan'] ? p['loan_total'] : p['price']as num?)?.toInt() ?? 0)} · Score: $score', style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white)),
                                               ]),
                                             ),
                                             const SizedBox(width: 8),
@@ -605,12 +614,26 @@ class _MarketPageState extends State<MarketPage> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const MarketBuilderPage()),
+      floatingActionButton: SafeArea(
+        bottom: true,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FloatingActionButton.extended(
+              heroTag: 'positions',
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PositionsPage())),
+              icon: const Icon(Icons.swap_horiz),
+              label: const Text('Positions'),
+            ),
+            const SizedBox(height: 10),
+            FloatingActionButton.extended(
+              heroTag: 'create',
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MarketBuilderPage())),
+              icon: const Icon(Icons.create),
+              label: const Text('Create'),
+            ),
+          ],
         ),
-        icon: const Icon(Icons.create),
-        label: const Text('Create'),
       ),
     );
   }
