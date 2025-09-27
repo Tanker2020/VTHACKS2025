@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:nash/data/mock_data.dart';
+import 'package:nash/widgets/gradient_app_bar.dart';
 
 class MarketBuilderPage extends StatefulWidget {
   const MarketBuilderPage({super.key});
@@ -66,18 +68,44 @@ class _MarketBuilderPageState extends State<MarketBuilderPage> {
   }
 
   void _submit(Map<String, dynamic> obj) {
-    // Demo: In real app, send to backend (Supabase) here.
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Market request created for \$${obj['amount']}')));
+    // Add to in-memory mockAssets as a loan-type asset for local/demo purposes
+    final asset = {
+      'type': 'loan',
+      'title': 'Loan Request — ${obj['purpose'] ?? 'General'}',
+      'price': (obj['amount'] as double).toStringAsFixed(2),
+      'category': 'Open Loans',
+      'urgency': obj['urgency'] ?? 'Normal',
+      'loan_total': obj['amount'],
+      'loan_raised': 0.0,
+      'loan_rate': 5.0,
+      'loan_duration_months': obj['duration_Days'],
+      'borrower_id': null,
+      'created_at': obj['created_at'],
+    };
+    debugPrint(asset.toString());
+    final added = addAsset(asset);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Market request created (#${added['id']}) for \$${obj['amount']}')));
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Create Market Request')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
+      appBar: const GradientAppBar(title: Text('Create Market Request')),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              theme.colorScheme.primary.withOpacity(0.03),
+              theme.colorScheme.secondary.withOpacity(0.02),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -165,6 +193,7 @@ class _MarketBuilderPageState extends State<MarketBuilderPage> {
                 ),
               ),
             ],
+          ),
           ),
         ),
       ),
