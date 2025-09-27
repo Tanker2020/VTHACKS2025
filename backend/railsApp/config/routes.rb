@@ -3,15 +3,14 @@ require "sidekiq/web"
 Rails.application.routes.draw do
   root "home#index"
 
+  post "/graphql", to: "graphql#execute"
 
-
-
-
-
+  
   # Mount Sidekiq Web UI for monitoring at /sidekiq, protected by basic auth in non-development envs.
   if Rails.env.development?
     # In dev: open access
     mount Sidekiq::Web => "/sidekiq"
+    mount GraphiQL::Rails::Engine, at: "/graphiql", graphql_path: "/graphql"
   else
     # In prod/test: protect with basic auth
     Sidekiq::Web.use Rack::Auth::Basic do |username, password|
@@ -33,4 +32,7 @@ Rails.application.routes.draw do
 
   # Defines the root path route ("/")
   # root "posts#index"
+  
+  # Catch-all for unmatched routes — return JSON 404
+  match '*unmatched', to: 'errors#not_found', via: :all
 end
