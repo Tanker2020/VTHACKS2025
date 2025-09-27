@@ -36,7 +36,7 @@ Quick start (from the `backend/` folder):
 
 ```bash
 # build and run the dev stack (Rails, Python agent, Redis)
-cd deploy
+cd backend/deploy
 docker compose -f docker-compose.dev.yml up --build
 ```
 

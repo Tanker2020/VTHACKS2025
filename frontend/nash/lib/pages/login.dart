@@ -88,8 +88,16 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
         final session = data.session;
         final uuid = supabase.auth.currentUser?.id;
         final jwt = session?.accessToken;
-        print(jwt);
-        print(uuid!);
+        // Avoid force-unwrapping nullable values in the auth listener.
+        // Print diagnostics only when present to prevent runtime null-check errors.
+        if (jwt != null) print(jwt);
+        if (uuid != null) {
+          print(uuid);
+        } else {
+          // helpful for debugging during development
+          print('no current user id');
+        }
+
         if (session != null) {
           _redirecting = true;
           Navigator.of(context).pushReplacement(
@@ -124,10 +132,12 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
 
     try {
       setState(() => _isLoading = true);
-      final AuthResponse = supabase.auth.signInWithOtp(
+      // Await the sign-in call so network/auth errors are caught by this try/catch.
+      await supabase.auth.signInWithOtp(
         email: email,
-        emailRedirectTo: kIsWeb ? null : 'io.supabase.flutterquickstart://login-callback/',
+        emailRedirectTo: kIsWeb ? Uri.base.origin : 'io.supabase.flutterquickstart://login-callback/',
       );
+      // If the call succeeded, show a success toast and clear the input.
       if (mounted) {
         showToast(context, 'Check your email for a login link!');
         _emailController.clear();

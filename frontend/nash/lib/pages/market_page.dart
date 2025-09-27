@@ -1,5 +1,42 @@
 import 'package:flutter/material.dart';
+import 'dart:math';
 import 'package:nash/pages/market_builder.dart';
+
+// Simple vertical dashed divider using CustomPainter
+class DashedVerticalDivider extends StatelessWidget {
+  final double dashHeight;
+  final double gapHeight;
+  final Color color;
+  const DashedVerticalDivider({Key? key, this.dashHeight = 6, this.gapHeight = 4, this.color = Colors.black26}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: const Size(1, double.infinity),
+      painter: _DashedVerticalPainter(dashHeight: dashHeight, gapHeight: gapHeight, color: color),
+    );
+  }
+}
+
+class _DashedVerticalPainter extends CustomPainter {
+  final double dashHeight;
+  final double gapHeight;
+  final Color color;
+  _DashedVerticalPainter({required this.dashHeight, required this.gapHeight, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color..strokeWidth = 1.0;
+    double y = 0;
+    while (y < size.height) {
+      canvas.drawLine(Offset(size.width / 2, y), Offset(size.width / 2, y + dashHeight), paint);
+      y += dashHeight + gapHeight;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
 
 class MarketPage extends StatefulWidget {
   const MarketPage({super.key});
@@ -10,23 +47,21 @@ class MarketPage extends StatefulWidget {
 
 class _MarketPageState extends State<MarketPage> {
   final _searchController = TextEditingController();
-  String _selectedCategory = 'All';
+  String _selectedCategory = 'Open Loans';
   String _selectedSort = 'Relevance';
 
   final List<Map<String, dynamic>> _products = List.generate(12, (i) => {
         'id': i + 1,
         'title': 'Product ${i + 1}',
         'price': (9.99 + i).toStringAsFixed(2),
-        'category': (i % 3 == 0) ? 'Open Loans' : (i % 3 == 1) ? 'Predictions' : 'Other',
-        'image': null,
-        'description': 'This is a short description of product ${i + 1}. It\'s a lovely item that you will enjoy.'
+        'category': (i % 3 == 0) ? 'Open Loans' : (i % 3 == 1) ? 'Predictions' : 'Other'
       });
 
   List<Map<String, dynamic>> get _filteredProducts {
     final q = _searchController.text.trim().toLowerCase();
     return _products.where((p) {
       final matchesCategory = _selectedCategory == 'All' || p['category'] == _selectedCategory;
-      final matchesQuery = q.isEmpty || p['title'].toLowerCase().contains(q) || p['description'].toLowerCase().contains(q);
+      final matchesQuery = q.isEmpty || p['title'].toLowerCase().contains(q);
       return matchesCategory && matchesQuery;
     }).toList();
   }
@@ -73,7 +108,6 @@ class _MarketPageState extends State<MarketPage> {
                       child: const Center(child: Icon(Icons.shopping_bag_outlined, size: 64, color: Colors.black26)),
                     ),
                     const SizedBox(height: 12),
-                    Text(product['description'], style: Theme.of(context).textTheme.bodyMedium),
                     const SizedBox(height: 20),
                     ElevatedButton.icon(
                       onPressed: () {
@@ -168,25 +202,25 @@ class _MarketPageState extends State<MarketPage> {
               const SizedBox(height: 12),
               SizedBox(
                 height: 40,
-                child: ListView.separated(
+                child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
-                  itemCount: categories.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, i) {
-                    final c = categories[i];
-                    final selected = c == _selectedCategory;
-                    return ChoiceChip(
-                      label: Text(c),
-                      selected: selected,
-                      onSelected: (_) => setState(() {
-                        if (_selectedCategory == c){
-                          _selectedCategory = 'All';
-                        } else {
-                          _selectedCategory = c;
-                        }
-                      }),
-                    );
-                  },
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: categories.map((c) {
+                      final selected = c == _selectedCategory;
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6.0),
+                        child: ChoiceChip(
+                          label: Text(c),
+                          selected: selected,
+                          onSelected: (_) => setState(() {
+                            // enforce that one category must always be selected
+                            _selectedCategory = c;
+                          }),
+                        ),
+                      );
+                    }).toList(),
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
@@ -194,24 +228,76 @@ class _MarketPageState extends State<MarketPage> {
                 child: items.isEmpty
                     ? Center(child: Text('No products found', style: theme.textTheme.titleMedium))
                     : ListView.separated(
-                        itemCount: items.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (context, index) {
-                          final p = items[index];
-                          return ListTile(
-                            onTap: () => _openProduct(context, p),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                            title: Text(p['title'], style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-                            subtitle: Text(p['description'], maxLines: 2, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall),
-                            trailing: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text('\$${p['price']}', style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold)),
-                                const SizedBox(height: 6),
-                              ],
-                            ),
-                          );
-                        },
+                            itemCount: items.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 8),
+                            itemBuilder: (context, index) {
+                              // We'll render Open Loans as a horizontal row of cards with dashed separators.
+                              final openLoans = items.where((it) => it['category'] == 'Open Loans' || it['category'] == 'Open Loan').toList();
+
+                              // If Open Loans category is selected, show a horizontal Wrap for those items.
+                              if (_selectedCategory == 'Open Loans') {
+                                // Full-width stacked cards: use vertical Column so each Open Loan uses the full page width.
+                                return Column(
+                                  children: List.generate(openLoans.length, (idx) {
+                                    final p = openLoans[idx];
+                                    final seed = idx + (p['title']?.toString().length ?? 0);
+                                    final rnd = Random(seed);
+                                    final score = rnd.nextInt(101);
+                                    final usernameSeed = '${p['title']}_${p['price']}_$idx';
+                                    final hashed = usernameSeed.hashCode.toUnsigned(32).toRadixString(16);
+                                    final unameLen = hashed.length >= 6 ? 6 : hashed.length;
+                                    final displayUsername = 'user_${hashed.substring(0, unameLen)}';
+                                    Color bandColor;
+                                    if (score < 34) bandColor = Colors.red;
+                                    else if (score < 67) bandColor = Colors.yellow.shade700;
+                                    else bandColor = Colors.green;
+
+                                    return Column(
+                                      children: [
+                                        Card(
+                                          color: bandColor.withOpacity(0.95),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                          child: InkWell(
+                                            onTap: () => _openProduct(context, p),
+                                            child: Container(
+                                              width: double.infinity,
+                                              padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 16.0),
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  // show username as the primary label instead of product title
+                                                  Text(displayUsername, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: Colors.white)),
+                                                  const SizedBox(height: 6),
+                                                  Text('\$${double.parse(p['price']).toStringAsFixed(0)}', style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: Colors.white70)),
+                                                  const SizedBox(height: 10),
+                                                  // description below, also on the colored background                                                ],
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        // separator between full-width cards
+                                        if (idx < openLoans.length - 1) const SizedBox(height: 8),
+                                      ],
+                                    );
+                                  }),
+                                );
+                              }
+
+                              // Fallback: render other items in the vertical list as before.
+                              final p = items[index];
+                              return ListTile(
+                                onTap: () => _openProduct(context, p),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                title: Text(p['title'], style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),                                trailing: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text('\$${p['price']}', style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold)),
+                                    const SizedBox(height: 6),
+                                  ],
+                                ),
+                              );
+                            },
                       ),
               ),
             ],
