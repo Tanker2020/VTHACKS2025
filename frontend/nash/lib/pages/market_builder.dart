@@ -12,7 +12,6 @@ class _MarketBuilderPageState extends State<MarketBuilderPage> {
   final _amountController = TextEditingController();
   final _purposeController = TextEditingController();
   int _durationMonths = 6;
-  double _interestRate = 5.0;
   String _urgency = 'Normal'; // Low, Normal, High
 
   @override
@@ -28,7 +27,6 @@ class _MarketBuilderPageState extends State<MarketBuilderPage> {
       'amount': amount,
       'urgency': _urgency,
       'duration_months': _durationMonths,
-      'interest_rate_percent': _interestRate,
       'purpose': _purposeController.text.trim(),
       'created_at': DateTime.now().toIso8601String(),
     };
@@ -48,7 +46,6 @@ class _MarketBuilderPageState extends State<MarketBuilderPage> {
             Text('Amount: \$${obj['amount']}', style: Theme.of(context).textTheme.bodyLarge),
             Text('Urgency: ${obj['urgency']}', style: Theme.of(context).textTheme.bodyMedium),
             Text('Duration: ${obj['duration_months']} months', style: Theme.of(context).textTheme.bodyMedium),
-            Text('Interest: ${obj['interest_rate_percent']}%', style: Theme.of(context).textTheme.bodyMedium),
             const SizedBox(height: 8),
             Text('Purpose:', style: Theme.of(context).textTheme.titleSmall),
             Text(obj['purpose'].isNotEmpty ? obj['purpose'] : '—', style: Theme.of(context).textTheme.bodySmall),
@@ -132,15 +129,6 @@ class _MarketBuilderPageState extends State<MarketBuilderPage> {
                 ],
               ),
               const SizedBox(height: 12),
-              Text('Interest rate (%)', style: theme.textTheme.titleSmall),
-              Slider(
-                value: _interestRate,
-                min: 0,
-                max: 25,
-                divisions: 25,
-                label: '${_interestRate.toStringAsFixed(1)}%',
-                onChanged: (v) => setState(() => _interestRate = double.parse(v.toStringAsFixed(1))),
-              ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _purposeController,
@@ -171,8 +159,6 @@ class _MarketBuilderPageState extends State<MarketBuilderPage> {
                     Text('Urgency: $_urgency'),
                     const SizedBox(height: 6),
                     Text('Duration: $_durationMonths months'),
-                    const SizedBox(height: 6),
-                    Text('Interest: ${_interestRate.toStringAsFixed(1)}%'),
                     const SizedBox(height: 8),
                     Text('Purpose: ${_purposeController.text.isNotEmpty ? _purposeController.text : '—'}'),
                   ]),
