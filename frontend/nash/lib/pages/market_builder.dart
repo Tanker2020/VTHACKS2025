@@ -11,7 +11,7 @@ class _MarketBuilderPageState extends State<MarketBuilderPage> {
   final _formKey = GlobalKey<FormState>();
   final _amountController = TextEditingController();
   final _purposeController = TextEditingController();
-  int _durationMonths = 6;
+  int _durationDays = 6;
   String _urgency = 'Normal'; // Low, Normal, High
 
   @override
@@ -26,7 +26,7 @@ class _MarketBuilderPageState extends State<MarketBuilderPage> {
     return {
       'amount': amount,
       'urgency': _urgency,
-      'duration_months': _durationMonths,
+      'duration_Days': _durationDays,
       'purpose': _purposeController.text.trim(),
       'created_at': DateTime.now().toIso8601String(),
     };
@@ -45,7 +45,7 @@ class _MarketBuilderPageState extends State<MarketBuilderPage> {
           children: [
             Text('Amount: \$${obj['amount']}', style: Theme.of(context).textTheme.bodyLarge),
             Text('Urgency: ${obj['urgency']}', style: Theme.of(context).textTheme.bodyMedium),
-            Text('Duration: ${obj['duration_months']} months', style: Theme.of(context).textTheme.bodyMedium),
+            Text('Duration: ${obj['duration_Days']} Days', style: Theme.of(context).textTheme.bodyMedium),
             const SizedBox(height: 8),
             Text('Purpose:', style: Theme.of(context).textTheme.titleSmall),
             Text(obj['purpose'].isNotEmpty ? obj['purpose'] : '—', style: Theme.of(context).textTheme.bodySmall),
@@ -114,14 +114,14 @@ class _MarketBuilderPageState extends State<MarketBuilderPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Duration (months)', style: theme.textTheme.titleSmall),
+                        Text('Duration (Days)', style: theme.textTheme.titleSmall),
                         Slider(
-                          value: _durationMonths.toDouble(),
+                          value: _durationDays.toDouble(),
                           min: 1,
                           max: 60,
                           divisions: 59,
-                          label: '$_durationMonths',
-                          onChanged: (v) => setState(() => _durationMonths = v.round()),
+                          label: '$_durationDays',
+                          onChanged: (v) => setState(() => _durationDays = v.round()),
                         ),
                       ],
                     ),
@@ -158,7 +158,7 @@ class _MarketBuilderPageState extends State<MarketBuilderPage> {
                     const SizedBox(height: 6),
                     Text('Urgency: $_urgency'),
                     const SizedBox(height: 6),
-                    Text('Duration: $_durationMonths months'),
+                    Text('Duration: $_durationDays Days'),
                     const SizedBox(height: 8),
                     Text('Purpose: ${_purposeController.text.isNotEmpty ? _purposeController.text : '—'}'),
                   ]),

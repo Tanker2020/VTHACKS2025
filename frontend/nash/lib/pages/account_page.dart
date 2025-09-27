@@ -1,4 +1,4 @@
-import 'dart:typed_data';
+// removed unused import 'dart:typed_data'
 import 'package:flutter/material.dart';
 import 'package:nash/pages/market_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -67,7 +67,6 @@ class _AccountPageState extends State<AccountPage> {
   final _usernameController = TextEditingController();
   final _websiteController = TextEditingController();
 
-  String? _avatarUrl;
   var _loading = true;
 
   /// Called once a user id is received within `onAuthenticated()`
@@ -83,38 +82,6 @@ class _AccountPageState extends State<AccountPage> {
       _usernameController.text = (data['username'] ?? '') as String;
       _websiteController.text = (data['website'] ?? '') as String;
 
-    } on PostgrestException catch (error) {
-      if (mounted) showToast(context, error.message, isError: true);
-    } catch (error) {
-      if (mounted) {
-        showToast(context, 'Unexpected error occurred', isError: true);
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-        });
-      }
-    }
-  }
-
-  /// Called when user taps `Update` button
-  Future<void> _updateProfile() async {
-    setState(() {
-      _loading = true;
-    });
-    final userName = _usernameController.text.trim();
-    final website = _websiteController.text.trim();
-    final user = supabase.auth.currentUser;
-    final updates = {
-      'id': user!.id,
-      'username': userName,
-      'website': website,
-      'updated_at': DateTime.now().toIso8601String(),
-    };
-    try {
-      await supabase.from('profiles').upsert(updates);
-      if (mounted) showToast(context, 'Successfully updated profile!');
     } on PostgrestException catch (error) {
       if (mounted) showToast(context, error.message, isError: true);
     } catch (error) {
@@ -314,6 +281,15 @@ class _AccountPageState extends State<AccountPage> {
                       Text(
                         _usernameController.text.isNotEmpty ? _usernameController.text : 'Unknown User',
                         style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 6),
+                      // Stylized Nash Score text
+                      Text.rich(
+                        TextSpan(children: [
+                          TextSpan(text: '1,234', style: theme.textTheme.headlineSmall?.copyWith(color: theme.colorScheme.primary, fontWeight: FontWeight.bold)),
+                          TextSpan(text: ' NASH', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onBackground.withOpacity(0.7), letterSpacing: 1.2)),
+                        ]),
+                        textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 12),
 
