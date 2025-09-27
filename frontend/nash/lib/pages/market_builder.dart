@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:nash/data/mock_data.dart';
 
 class MarketBuilderPage extends StatefulWidget {
   const MarketBuilderPage({super.key});
@@ -66,8 +67,23 @@ class _MarketBuilderPageState extends State<MarketBuilderPage> {
   }
 
   void _submit(Map<String, dynamic> obj) {
-    // Demo: In real app, send to backend (Supabase) here.
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Market request created for \$${obj['amount']}')));
+    // Add to in-memory mockAssets as a loan-type asset for local/demo purposes
+    final asset = {
+      'type': 'loan',
+      'title': 'Loan Request — ${obj['purpose'] ?? 'General'}',
+      'price': (obj['amount'] as double).toStringAsFixed(2),
+      'category': 'Open Loans',
+      'urgency': obj['urgency'] ?? 'Normal',
+      'loan_total': obj['amount'],
+      'loan_raised': 0.0,
+      'loan_rate': 5.0,
+      'loan_duration_months': obj['duration_Days'],
+      'borrower_id': null,
+      'created_at': obj['created_at'],
+    };
+    debugPrint(asset.toString());
+    final added = addAsset(asset);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Market request created (#${added['id']}) for \$${obj['amount']}')));
   }
 
   @override

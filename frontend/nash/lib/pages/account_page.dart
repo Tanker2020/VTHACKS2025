@@ -68,6 +68,7 @@ class _AccountPageState extends State<AccountPage> {
   final _websiteController = TextEditingController();
 
   var _loading = true;
+  int? _nashScore;
 
   /// Called once a user id is received within `onAuthenticated()`
   Future<void> _getProfile() async {
@@ -77,10 +78,11 @@ class _AccountPageState extends State<AccountPage> {
 
     try {
       final userId = supabase.auth.currentSession!.user.id;
-      final data =
-          await supabase.from('profiles').select().eq('id', userId).single();
-      _usernameController.text = (data['username'] ?? '') as String;
-      _websiteController.text = (data['website'] ?? '') as String;
+        final data =
+            await supabase.from('profiles').select('username, website, nashScore').eq('id', userId).single();
+        _usernameController.text = (data['username'] ?? '') as String;
+        _websiteController.text = (data['website'] ?? '') as String;
+        _nashScore = (data['nashScore'] is num) ? (data['nashScore'] as num).toInt() : null;
 
     } on PostgrestException catch (error) {
       if (mounted) showToast(context, error.message, isError: true);
@@ -286,7 +288,7 @@ class _AccountPageState extends State<AccountPage> {
                       // Stylized Nash Score text
                       Text.rich(
                         TextSpan(children: [
-                          TextSpan(text: '1,234', style: theme.textTheme.headlineSmall?.copyWith(color: theme.colorScheme.primary, fontWeight: FontWeight.bold)),
+                            TextSpan(text: _nashScore != null ? _nashScore.toString() : '—', style: theme.textTheme.headlineSmall?.copyWith(color: theme.colorScheme.primary, fontWeight: FontWeight.bold)),
                           TextSpan(text: ' NASH', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onBackground.withOpacity(0.7), letterSpacing: 1.2)),
                         ]),
                         textAlign: TextAlign.center,
