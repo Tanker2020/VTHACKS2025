@@ -123,11 +123,11 @@ jobs:
 
       # --- Deploy with compose (use prod tag by default) ---
       - name: Pull images for compose (prod)
-        working-directory: deploy
+        working-directory: ${{ env.COMPOSE_DIR }}
         run: IMAGE_NS="$IMAGE_NS" TAG="$DEPLOY_TAG" docker compose pull
 
       - name: DB migrate (rails)
-        working-directory: deploy
+        working-directory: ${{ env.COMPOSE_DIR }}
         env:
           RAILS_ENV: production
         run: |
@@ -139,7 +139,7 @@ jobs:
           fi
 
       - name: Up services
-        working-directory: deploy
+        working-directory: ${{ env.COMPOSE_DIR }}
         run: IMAGE_NS="$IMAGE_NS" TAG="$DEPLOY_TAG" docker compose up -d
 
       - name: Health check
