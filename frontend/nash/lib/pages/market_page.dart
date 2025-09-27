@@ -155,14 +155,14 @@ class _MarketPageState extends State<MarketPage> {
                       ElevatedButton.icon(
                         onPressed: () async {
                           // open contribute dialog
-                              final contributed = await showDialog<double?>(
+                          final contributed = await showDialog<double?>(
                             context: context,
                             builder: (context) {
-                              final amtCtrl = TextEditingController();
+                              final _amtCtrl = TextEditingController();
                               return AlertDialog(
                                 title: const Text('Contribute to loan'),
                                 content: TextField(
-                                  controller: amtCtrl,
+                                  controller: _amtCtrl,
                                   keyboardType: TextInputType.numberWithOptions(decimal: true),
                                   decoration: const InputDecoration(prefixText: '\$', hintText: 'Amount to contribute'),
                                 ),
@@ -170,7 +170,7 @@ class _MarketPageState extends State<MarketPage> {
                                   TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
                                   ElevatedButton(
                                     onPressed: () {
-                                      final v = double.tryParse(amtCtrl.text);
+                                      final v = double.tryParse(_amtCtrl.text);
                                       Navigator.of(context).pop(v);
                                     },
                                     child: const Text('Contribute'),
@@ -337,11 +337,12 @@ class _MarketPageState extends State<MarketPage> {
                                     final p = openLoans[idx];
                                     final seed = idx + (p['title']?.toString().length ?? 0);
                                     final rnd = Random(seed);
-                                    final score = rnd.nextInt(101);
+                                    final user = findUserById(p['borrower_id'] as String);
+                                    final score = user != null && user['nashScore'] != null ? user['nashScore'] as int: 0;
                                     final usernameSeed = '${p['title']}_${p['price']}_$idx';
                                     final hashed = usernameSeed.hashCode.toUnsigned(32).toRadixString(16);
                                     final unameLen = hashed.length >= 6 ? 6 : hashed.length;
-                                    final displayUsername = 'user_${hashed.substring(0, unameLen)}';
+                                    final displayUsername = p['title'];
                                     Color bandColor;
                                     if (score < 34) bandColor = Colors.red;
                                     else if (score < 67) bandColor = Colors.yellow.shade700;
