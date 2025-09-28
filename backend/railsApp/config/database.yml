@@ -5,8 +5,10 @@
 #   gem "sqlite3"
 #
 default: &default
-  url: <%= ENV.fetch("DATABASE_URL") %>
-  pool: <%= ENV['RAILS_MAX_THREADS'] %>
+  # Use DATABASE_URL when provided (production), otherwise fall back to a
+  # local SQLite file so the app can boot in environments without DB config.
+  url: <%= ENV['DATABASE_URL'] || 'sqlite3:/app/storage/fallback.sqlite3' %>
+  pool: <%= ENV.fetch('RAILS_MAX_THREADS', 5) %>
   timeout: 5000
 
 development:

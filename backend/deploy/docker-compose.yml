@@ -1,7 +1,9 @@
 services:
   rails:
     image: ${IMAGE_NS}/rails:${TAG:-prod}
-    env_file: /home/opc/srv/myapp/.env
+    # Use the application-specific env file in the railsApp folder. This file
+    # contains RAILS_MASTER_KEY, SUPABASE keys, RECEIVE_PASSWORD and SHARED_SECRET
+    env_file: ../railsApp/.env.production
     environment:
       # split redis DBs
       REDIS_CACHE_URL: redis://redis:6379/0
@@ -11,7 +13,10 @@ services:
       REDIS_URL: redis://redis:6379/1
     ports:
       - "127.0.0.1:3000:3000"     # only local; nginx proxies to this
+    # Ensure the python agent and redis are available before starting Rails.
     depends_on:
+      agent:
+        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
@@ -45,14 +50,22 @@ services:
 
   agent:
     image: ${IMAGE_NS}/agent:${TAG:-prod}
-    env_file: /home/opc/srv/myapp/.env
+    # Use the same env file so agent and rails share secrets like SHARED_SECRET
+    env_file: ../railsApp/.env.production
     environment:
       REDIS_URL: redis://redis:6379/1
+      # Let Rails reach the agent at this service name inside compose network.
+      ORACLE_URL: http://agent:5000/compute_and_send
     depends_on:
-      rails:
-        condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      # agent should expose a small health endpoint (e.g. /health) on port 5000
+      test: ["CMD", "curl", "-fsS", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
     restart: always
     # healthcheck:
     #   test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]

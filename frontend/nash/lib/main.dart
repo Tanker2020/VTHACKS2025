@@ -7,7 +7,7 @@ import 'package:nash/pages/login.dart' as login_page;
 import 'package:nash/theme/app_theme.dart';
 
 Future<void> main() async {
-  await dotenv.load(fileName: ".env");
+  await dotenv.load(fileName: "assets/.env");
   await Supabase.initialize(
     url: dotenv.env['YOUR_SUPABASE_URL'] ?? "",
     anonKey: dotenv.env['YOUR_SUPABASE_PUBLISHABLE_KEY'] ?? "", 
