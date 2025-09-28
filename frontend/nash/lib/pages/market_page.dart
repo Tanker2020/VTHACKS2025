@@ -26,6 +26,7 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
   bool _loading = true;
   List<Map<String, dynamic>> _loanRequests = const [];
   List<Map<String, dynamic>> _activeDeals = const [];
+  String? _currentUserId;
 
   @override
   void initState() {
@@ -43,6 +44,9 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
   Future<void> _loadData() async {
     setState(() => _loading = true);
     try {
+      final session = Supabase.instance.client.auth.currentSession;
+      final currentUserId = session?.user.id;
+
       final loanRequests = await supabaseService.fetchLoanRequests();
       final deals = await supabaseService.fetchBankDeals();
 
@@ -77,7 +81,25 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
       }
 
       if (!mounted) return;
-      _loanRequests = loanRequests;
+      _currentUserId = currentUserId;
+
+      final openRequests = loanRequests.where((row) {
+        if (row['done'] == true) return false;
+        final requestId = row['req_id']?.toString();
+        final lendeeId = row['lendee_id']?.toString();
+
+        if (_currentUserId != null) {
+          if (lendeeId == _currentUserId) return false;
+          final hasActiveDeal = activeDeals.any((deal) =>
+              deal['loan_id']?.toString() == requestId &&
+              deal['lender_id']?.toString() == _currentUserId);
+          if (hasActiveDeal) return false;
+        }
+
+        return true;
+      }).toList();
+
+      _loanRequests = openRequests;
       _activeDeals = activeDeals;
       _applySort();
     } on PostgrestException catch (error) {
@@ -365,7 +387,7 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
                     ],
                   ),
                   const SizedBox(height: 10),
-                  Text('Amount: \$${amount.toStringAsFixed(2)}', style: theme.textTheme.titleLarge?.copyWith(fontSize: 26)),
+                  Text('Loan Amount: \$${amount.toStringAsFixed(2)}', style: theme.textTheme.titleLarge?.copyWith(fontSize: 26)),
                   const SizedBox(height: 8),
                   if (isLoanRequest)
                     Wrap(
@@ -411,9 +433,9 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
                       SizedBox(
                         height: 44,
                         child: FilledButton(
-                          onPressed: () {
+                          onPressed: () async {
                             if (isLoanRequest) {
-                              login_page.showToast(context, 'Lending flow coming soon');
+                              await _lendToRequest(row);
                             } else {
                               _showInvestmentSheet(row);
                             }
@@ -551,7 +573,7 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Text('Amount: \$${amount.toStringAsFixed(2)}', style: theme.textTheme.titleLarge?.copyWith(fontSize: 26)),
+                  Text('Loan Amount: \$${amount.toStringAsFixed(2)}', style: theme.textTheme.titleLarge?.copyWith(fontSize: 26)),
                   const SizedBox(height: 6),
                   Wrap(
                     spacing: 12,
@@ -615,7 +637,7 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
                           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                         ),
                         icon: const Icon(Icons.show_chart_outlined),
-                        label: const Text('Purchase'),
+                        label: const Text('View price graph'),
                       ),
                     ),
                   ),
@@ -713,6 +735,61 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
     );
   }
 
+  Future<void> _lendToRequest(Map<String, dynamic> request) async {
+    final session = Supabase.instance.client.auth.currentSession;
+    final lenderId = session?.user.id;
+    if (lenderId == null) {
+      login_page.showToast(context, 'You must sign in first', isError: true);
+      return;
+    }
+
+    final amount = _asDouble(request['amount']);
+    final requestId = request['req_id']?.toString();
+    final lendeeId = request['lendee_id']?.toString();
+
+    if (requestId == null || requestId.isEmpty || lendeeId == null || lendeeId.isEmpty) {
+      login_page.showToast(context, 'Loan request data unavailable', isError: true);
+      return;
+    }
+
+    if (lenderId == lendeeId) {
+      login_page.showToast(context, 'You cannot lend to your own request', isError: true);
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm lending'),
+        content: Text(
+          'Lend \$${amount.toStringAsFixed(2)} to this borrower? This amount will be deducted from your balance immediately.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Confirm')), 
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await supabaseService.lendToLoanRequest(
+        lenderId: lenderId,
+        lendeeId: lendeeId,
+        requestId: requestId,
+        amount: amount,
+      );
+      if (!mounted) return;
+      login_page.showToast(context, 'Loan funded successfully');
+      await _loadData();
+    } on PostgrestException catch (error) {
+      if (mounted) login_page.showToast(context, error.message, isError: true);
+    } catch (_) {
+      if (mounted) login_page.showToast(context, 'Unable to complete lending', isError: true);
+    }
+  }
+
   Future<void> _openPosition({required bool isLong, required Map<String, dynamic> deal}) async {
     final session = Supabase.instance.client.auth.currentSession;
     final userId = session?.user.id;
@@ -747,7 +824,9 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
     }
 
     final priceArray = (deal['bank_arrays'] as List? ?? const []).cast<num>();
-    final entryPrice = priceArray.isNotEmpty ? priceArray.last.toDouble() : 1.0;
+    final entryPrice = priceArray.isNotEmpty ? priceArray.last.toDouble() : 0.5;
+    final effectiveEntry = entryPrice > 0 ? entryPrice : 0.5;
+    final shares = amount / effectiveEntry;
 
     try {
       await supabaseService.insertInvestment(
@@ -757,7 +836,11 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
         selection: isLong ? 'yes' : 'no',
         entryPrice: entryPrice,
       );
-      login_page.showToast(context, 'Position opened successfully');
+      final direction = isLong ? 'LONG' : 'SHORT';
+      login_page.showToast(
+        context,
+        'Opened $direction @ ${effectiveEntry.toStringAsFixed(3)} for ${shares.toStringAsFixed(3)} shares',
+      );
       await _loadData();
     } on PostgrestException catch (error) {
       login_page.showToast(context, error.message, isError: true);
@@ -1059,27 +1142,14 @@ class _PriceGraphSheet extends StatelessWidget {
             const SizedBox(height: 6),
             Text('Daily pricing (0-1 scale)', style: theme.textTheme.bodySmall?.copyWith(color: Colors.white70)),
             const SizedBox(height: 20),
-            SizedBox(
-              height: 220,
-              child: _PricePreviewGraph(priceArray: priceArray, height: 220, expanded: true),
-            ),
-            const SizedBox(height: 18),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _StatTile(label: 'First', value: firstValue),
-                _StatTile(label: 'Last', value: lastValue),
-                _StatTile(label: 'Change', value: delta, showSign: true),
-              ],
-            ),
             if (onLong != null && onShort != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                'Open a position',
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 12),
-              Row(
+            Text(
+              'Open a position',
+              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            ],
+            Row(
                 children: [
                   Expanded(
                     child: _PositionButton(
@@ -1098,8 +1168,20 @@ class _PriceGraphSheet extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 14)
-            ],
+              const SizedBox(height: 18),
+            SizedBox(
+              height: 220,
+              child: _PricePreviewGraph(priceArray: priceArray, height: 220, expanded: true),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _StatTile(label: 'First', value: firstValue),
+                _StatTile(label: 'Last', value: lastValue),
+                _StatTile(label: 'Change', value: delta, showSign: true),
+              ],
+            ),
           ],
         ),
       ),

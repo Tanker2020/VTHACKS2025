@@ -93,6 +93,8 @@ class _AccountPageState extends State<AccountPage> {
   List<Map<String, dynamic>> _borrowingRows = [];
   String _selectedMetric = 'Profits';
 
+  String? _processingLoanId;
+
   bool get _isOwnAccount {
     final currentId = supabase.auth.currentUser?.id;
     return !widget.readOnly && currentId != null && currentId == _userId;
@@ -160,7 +162,6 @@ class _AccountPageState extends State<AccountPage> {
           .map((row) => {
                 ...row,
                 'created_at': DateTime.tryParse(row['created_at']?.toString() ?? ''),
-                'settled_at': DateTime.tryParse(row['settled_at']?.toString() ?? ''),
                 'amount': _asDouble(row['amount']),
               })
           .where((row) => row['created_at'] != null)
@@ -172,7 +173,6 @@ class _AccountPageState extends State<AccountPage> {
           .map((row) => {
                 ...row,
                 'created_at': DateTime.tryParse(row['created_at']?.toString() ?? ''),
-                'settled_at': DateTime.tryParse(row['settled_at']?.toString() ?? ''),
                 'amount': _asDouble(row['amount']),
               })
           .where((row) => row['created_at'] != null)
@@ -227,6 +227,69 @@ class _AccountPageState extends State<AccountPage> {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const login_page.LoginPage()),
     );
+  }
+
+  Future<void> _payLoan(Map<String, dynamic> loanRow) async {
+    if (!_isOwnAccount) return;
+
+    final loanId = loanRow['loan_id']?.toString();
+    final loanRowId = loanRow['id']?.toString();
+    final lenderId = loanRow['lender_id']?.toString();
+    final lendeeId = loanRow['lendee_id']?.toString();
+    final amount = _asDouble(loanRow['amount']);
+
+    if (loanId == null || loanRowId == null || lenderId == null || lendeeId == null) {
+      showToast(context, 'Loan data unavailable', isError: true);
+      return;
+    }
+
+    if (_balance < amount) {
+      showToast(context, 'Insufficient balance to repay this loan', isError: true);
+      return;
+    }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Repay loan'),
+        content: Text('Repay ${_formatCurrency(amount)} from your balance?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Confirm')),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _processingLoanId = loanId);
+    try {
+      await supabaseService.payOffLoan(
+        loanRowId: loanRowId,
+        loanId: loanId,
+        lenderId: lenderId,
+        lendeeId: lendeeId,
+        amount: amount,
+      );
+      if (!mounted) return;
+      showToast(context, 'Loan repaid successfully');
+      await _refreshAll();
+    } on PostgrestException catch (error) {
+      if (mounted) showToast(context, error.message, isError: true);
+    } catch (_) {
+      if (mounted) showToast(context, 'Unable to process repayment', isError: true);
+    } finally {
+      if (mounted) setState(() => _processingLoanId = null);
+    }
+  }
+
+  Future<void> _payNextOutstanding() async {
+    final items = _outstandingBorrowings;
+    if (items.isEmpty) {
+      showToast(context, 'No outstanding loans to repay');
+      return;
+    }
+    await _payLoan(items.first);
   }
 
   @override
@@ -330,6 +393,30 @@ class _AccountPageState extends State<AccountPage> {
                       _formatCurrency(_balance),
                       style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700, fontSize: 26),
                     ),
+                    if (_isOwnAccount && _outstandingBorrowings.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                              backgroundColor: theme.colorScheme.primary,
+                              foregroundColor: theme.colorScheme.onPrimary,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            ),
+                            icon: _processingLoanId != null
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.payments_outlined),
+                            label: const Text('Pay back loan'),
+                            onPressed: _processingLoanId != null ? null : _payNextOutstanding,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -478,17 +565,39 @@ class _AccountPageState extends State<AccountPage> {
                         padding: const EdgeInsets.all(16),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: columns
-                              .map(
-                                (label) => Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 2),
-                                  child: _buildRowLine(
-                                    label,
-                                    _valueForColumn(label, row),
+                          children: [
+                            ...columns.map(
+                              (label) => Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 2),
+                                child: _buildRowLine(
+                                  label,
+                                  _valueForColumn(label, row),
+                                ),
+                              ),
+                            ),
+                            if (_selectedMetric == 'Borrowing' && _isOwnAccount && row['done'] != true)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 12),
+                                child: Align(
+                                  alignment: Alignment.centerRight,
+                                  child: FilledButton.icon(
+                                    onPressed: (_processingLoanId == row['loan_id']?.toString() || _balance < _asDouble(row['amount']))
+                                        ? null
+                                        : () => _payLoan(row),
+                                    icon: _processingLoanId == row['loan_id']?.toString()
+                                        ? const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(strokeWidth: 2),
+                                          )
+                                        : const Icon(Icons.attach_money_rounded),
+                                    label: Text(_balance < _asDouble(row['amount'])
+                                        ? 'Insufficient balance'
+                                        : 'Repay now'),
                                   ),
                                 ),
-                              )
-                              .toList(),
+                              ),
+                          ],
                         ),
                       );
                     },
@@ -515,8 +624,6 @@ class _AccountPageState extends State<AccountPage> {
         return _formatCurrency(row['profit_amount']);
       case 'Status':
         return row['done'] == true ? 'Complete' : 'Active';
-      case 'Settled':
-        return _formatDate(row['settled_at']);
       default:
         return row[label]?.toString() ?? '—';
     }
@@ -533,6 +640,15 @@ class _AccountPageState extends State<AccountPage> {
       ),
     );
   }
+
+  List<Map<String, dynamic>> get _outstandingBorrowings =>
+      _borrowingRows.where((row) => row['done'] != true).toList()
+        ..sort((a, b) {
+          final da = a['created_at'];
+          final db = b['created_at'];
+          if (da is DateTime && db is DateTime) return da.compareTo(db);
+          return 0;
+        });
 
   static double _asDouble(dynamic value) {
     if (value is num) return value.toDouble();

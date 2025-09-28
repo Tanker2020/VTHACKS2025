@@ -27,6 +27,8 @@ Rails.application.routes.draw do
   get "up" => "rails/health#show", as: :rails_health_check
 
   get "/data", to: "data#index"
+  # Endpoint for receiving computed mappings from the Python oracle.
+  post "/receive", to: "receive#create"
   
 
   # Render dynamic PWA files from app/views/pwa/* (remember to link manifest in application.html.erb)
