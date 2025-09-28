@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 // Input fields use a translucent 'bubbly' style (rounded, soft borders).
 class AppTheme {
   // Primary / secondary colors
-  static const Color primaryPink = Color(0xFFFF4DA6); // vivid pink
+  // Deeper pink for a darker, richer look
+  static const Color primaryPink = Color(0xFFB0005A); // deep pink
   static const Color purpleAccent = Color(0xFF9B59FF); // purple
   static const Color deepBlack = Color(0xFF050507);
   static const Color surfaceDark = Color(0xFF0B0B0D);
@@ -76,7 +77,8 @@ class AppTheme {
   }
 
   static LinearGradient get appBarGradient => const LinearGradient(
-        colors: [Color(0xFF2A0A1F), Color(0xFF5B2EFF)],
+        // darker pink -> purple gradient for a richer header
+        colors: [Color(0xFF4B0026), Color(0xFF7A1F6E)],
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       );
