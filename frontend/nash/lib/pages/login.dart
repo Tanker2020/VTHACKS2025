@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:nash/main.dart'; // exposes `supabase`
 import 'package:nash/pages/account_page.dart';
+import 'package:nash/widgets/animated_background.dart';
 
 /// ────────────────────────────────────────────────────────────────────────────
 /// Lightweight toast (overlay)
@@ -522,7 +523,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
       body: Stack(
         fit: StackFit.expand,
         children: [
-          const _AnimatedBackground(),
+    const AnimatedBackground(),
           Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 48),

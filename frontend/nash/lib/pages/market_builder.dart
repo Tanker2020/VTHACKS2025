@@ -1,6 +1,9 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
-import 'package:nash/data/mock_data.dart';
-import 'package:nash/widgets/gradient_app_bar.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'package:nash/services/supabase_service.dart';
 
 class MarketBuilderPage extends StatefulWidget {
   const MarketBuilderPage({super.key});
@@ -14,7 +17,8 @@ class _MarketBuilderPageState extends State<MarketBuilderPage> {
   final _amountController = TextEditingController();
   final _purposeController = TextEditingController();
   int _durationDays = 6;
-  String _urgency = 'Normal'; // Low, Normal, High
+  String _urgency = 'Normal';
+  bool _submitting = false;
 
   @override
   void dispose() {
@@ -23,177 +27,206 @@ class _MarketBuilderPageState extends State<MarketBuilderPage> {
     super.dispose();
   }
 
-  Map<String, dynamic> _buildMarketObject() {
-    final amount = double.tryParse(_amountController.text) ?? 0.0;
-    return {
-      'amount': amount,
-      'urgency': _urgency,
-      'duration_Days': _durationDays,
-      'purpose': _purposeController.text.trim(),
-      'created_at': DateTime.now().toIso8601String(),
-    };
-  }
-
-  void _preview() {
+  Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    final obj = _buildMarketObject();
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Preview Market Request'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Amount: \$${obj['amount']}', style: Theme.of(context).textTheme.bodyLarge),
-            Text('Urgency: ${obj['urgency']}', style: Theme.of(context).textTheme.bodyMedium),
-            Text('Duration: ${obj['duration_Days']} Days', style: Theme.of(context).textTheme.bodyMedium),
-            const SizedBox(height: 8),
-            Text('Purpose:', style: Theme.of(context).textTheme.titleSmall),
-            Text(obj['purpose'].isNotEmpty ? obj['purpose'] : '—', style: Theme.of(context).textTheme.bodySmall),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close')),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              _submit(obj);
-            },
-            child: const Text('Submit'),
-          )
-        ],
-      ),
-    );
+    final session = Supabase.instance.client.auth.currentSession;
+    final userId = session?.user.id;
+    if (userId == null) {
+      _showSnack('You need to be signed in to create a loan request.', isError: true);
+      return;
+    }
+
+    final amount = double.parse(_amountController.text.trim());
+    setState(() => _submitting = true);
+    try {
+      await supabaseService.insertLoanRequest(
+        amount: amount,
+        endTime: _durationDays,
+        lendeeId: userId,
+      );
+      if (!mounted) return;
+      _showSnack('Loan request submitted successfully.');
+      _amountController.clear();
+      _purposeController.clear();
+      setState(() {
+        _durationDays = 6;
+        _urgency = 'Normal';
+      });
+    } on PostgrestException catch (error) {
+      if (mounted) {
+        _showSnack(error.message, isError: true);
+      }
+    } catch (error) {
+      if (mounted) {
+        _showSnack('Unable to submit loan request', isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
   }
 
-  void _submit(Map<String, dynamic> obj) {
-    // Add to in-memory mockAssets as a loan-type asset for local/demo purposes
-    final asset = {
-      'type': 'loan',
-      'title': 'Loan Request — ${obj['purpose'] ?? 'General'}',
-      'price': (obj['amount'] as double).toStringAsFixed(2),
-      'category': 'Open Loans',
-      'urgency': obj['urgency'] ?? 'Normal',
-      'loan_total': obj['amount'],
-      'loan_raised': 0.0,
-      'loan_rate': 5.0,
-      'loan_duration_months': obj['duration_Days'],
-      'borrower_id': null,
-      'created_at': obj['created_at'],
-    };
-    debugPrint(asset.toString());
-    final added = addAsset(asset);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Market request created (#${added['id']}) for \$${obj['amount']}')));
+  void _showSnack(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: isError ? Colors.redAccent : null),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: const GradientAppBar(title: Text('Create Market Request')),
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        leading: IconButton(
+          tooltip: 'Back',
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        title: const Text('Create Market Request'),
+      ),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [
-              theme.colorScheme.primary.withOpacity(0.03),
-              theme.colorScheme.secondary.withOpacity(0.02),
-            ],
+            colors: [theme.colorScheme.primary.withOpacity(0.12), theme.colorScheme.secondary.withOpacity(0.08)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
         ),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextFormField(
-                controller: _amountController,
-                keyboardType: TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'Amount (USD)', prefixText: '\$'),
-                validator: (v) {
-                  final n = double.tryParse(v ?? '');
-                  if (n == null || n <= 0) return 'Enter a valid amount';
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              Text('Urgency', style: theme.textTheme.titleSmall),
-              const SizedBox(height: 8),
-              Row(
-                children: ['Low', 'Normal', 'High'].map((u) {
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8.0),
-                    child: ChoiceChip(
-                      label: Text(u),
-                      selected: _urgency == u,
-                      onSelected: (_) => setState(() => _urgency = u),
-                    ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                child: Container(
+                  width: 540,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: Colors.white.withOpacity(0.14)),
+                  ),
+                  padding: const EdgeInsets.all(20),
+                  child: Form(
+                    key: _formKey,
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Text('Duration (Days)', style: theme.textTheme.titleSmall),
+                        Text('Loan Details', style: theme.textTheme.titleLarge),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _amountController,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(labelText: 'Amount (USD)', prefixText: '\$'),
+                          validator: (v) {
+                            final n = double.tryParse(v ?? '');
+                            if (n == null || n <= 0) return 'Enter a valid amount';
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        Text('Urgency', style: theme.textTheme.titleSmall),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 12,
+                          children: ['Low', 'Normal', 'High'].map((value) {
+                            return ChoiceChip(
+                              label: Text(value),
+                              selected: _urgency == value,
+                              onSelected: (_) => setState(() => _urgency = value),
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: 16),
+                        Text('Duration (days)', style: theme.textTheme.titleSmall),
                         Slider(
                           value: _durationDays.toDouble(),
-                          min: 1,
+                          min: 2,
                           max: 60,
-                          divisions: 59,
+                          divisions: 58,
                           label: '$_durationDays',
-                          onChanged: (v) => setState(() => _durationDays = v.round()),
+                          onChanged: (value) => setState(() => _durationDays = value.round()),
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _purposeController,
+                          maxLines: 3,
+                          decoration: const InputDecoration(
+                            labelText: 'Purpose (optional)',
+                            hintText: 'Describe what this loan will be used for',
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        ElevatedButton.icon(
+                          onPressed: _submitting ? null : _submit,
+                          icon: _submitting
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.cloud_upload_outlined),
+                          label: const Text('Submit Loan Request'),
+                          style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+                        ),
+                        const SizedBox(height: 24),
+                        Text('Live Preview', style: theme.textTheme.titleMedium),
+                        const SizedBox(height: 12),
+                        _LoanPreview(
+                          amountText: _amountController.text,
+                          urgency: _urgency,
+                          duration: _durationDays,
+                          purpose: _purposeController.text,
                         ),
                       ],
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _purposeController,
-                decoration: const InputDecoration(labelText: 'Purpose (optional)', hintText: 'What is the loan for?'),
-                maxLines: 3,
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Expanded(child: OutlinedButton(onPressed: _preview, child: const Text('Preview'))),
-                  const SizedBox(width: 12),
-                  Expanded(child: ElevatedButton(onPressed: () { if (_formKey.currentState!.validate()) _submit(_buildMarketObject()); }, child: const Text('Create'))),
-                ],
-              ),
-              const SizedBox(height: 20),
-              const Divider(),
-              const SizedBox(height: 12),
-              Text('Live preview', style: theme.textTheme.titleMedium),
-              const SizedBox(height: 8),
-              Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('Amount: \$${_amountController.text.isNotEmpty ? _amountController.text : '0.00'}', style: theme.textTheme.titleLarge),
-                    const SizedBox(height: 6),
-                    Text('Urgency: $_urgency'),
-                    const SizedBox(height: 6),
-                    Text('Duration: $_durationDays Days'),
-                    const SizedBox(height: 8),
-                    Text('Purpose: ${_purposeController.text.isNotEmpty ? _purposeController.text : '—'}'),
-                  ]),
                 ),
               ),
-            ],
+            ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LoanPreview extends StatelessWidget {
+  const _LoanPreview({
+    required this.amountText,
+    required this.urgency,
+    required this.duration,
+    required this.purpose,
+  });
+
+  final String amountText;
+  final String urgency;
+  final int duration;
+  final String purpose;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final amount = double.tryParse(amountText) ?? 0;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.white.withOpacity(0.12)),
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Amount: \$${amount.toStringAsFixed(2)}', style: theme.textTheme.titleLarge),
+              const SizedBox(height: 6),
+              Text('Urgency: $urgency'),
+              const SizedBox(height: 6),
+              Text('Duration: $duration days'),
+              const SizedBox(height: 8),
+              Text('Purpose:', style: theme.textTheme.titleSmall),
+              Text(purpose.isNotEmpty ? purpose : '—', style: theme.textTheme.bodyMedium),
+            ],
           ),
         ),
       ),

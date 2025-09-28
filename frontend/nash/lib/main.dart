@@ -23,13 +23,15 @@ class MyApp extends StatelessWidget {
   const MyApp({super.key});
   @override
   Widget build(BuildContext context) {
+    final initialHome = supabase.auth.currentSession == null
+        ? const login_page.LoginPage()
+        : const AccountPage();
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Nash',
       theme: AppTheme.themeData,
-    home: supabase.auth.currentSession == null
-      ? const login_page.LoginPage()
-      : const AccountPage(),
+      home: initialHome,
     );
   }
 }
