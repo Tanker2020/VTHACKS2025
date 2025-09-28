@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "320273582741",
+    "project_id": "nash-8598a",
+    "storage_bucket": "nash-8598a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:320273582741:android:db2731b6a2d0d4e300a99c",
+        "android_client_info": {
+          "package_name": "com.example.nash"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC7QUT_qQlduAq2Itv_oaStLGs_Uq_vfGw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

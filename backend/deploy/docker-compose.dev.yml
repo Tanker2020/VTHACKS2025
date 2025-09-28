@@ -6,15 +6,17 @@ services:
     ports:
       - "3000:3000"
     env_file:
-      - ../.env.dev     # optional; for dev-only vars
+      - ../railsApp/.env.production
     environment:
       RAILS_ENV: development
     volumes:
       - ../railsApp:/app           # live code
       - bundle:/usr/local/bundle   # persist gems
       - rails_tmp:/app/tmp         # fewer perms issues
+    # In dev we want the python agent available for feature testing.
     depends_on:
       - redis
+      - agent
 
   agent:
     build:
@@ -23,11 +25,19 @@ services:
     working_dir: /app
     command: python main.py
     env_file:
-      - ../.env.dev     # add your agent’s dev vars here
+      - ../railsApp/.env.production
     volumes:
       - ../python:/app     # live code
     depends_on:
       - redis
+    ports:
+      - "5000:5000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 2s
 
   redis:
     image: redis:7-alpine
