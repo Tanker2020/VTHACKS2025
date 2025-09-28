@@ -1,13 +1,18 @@
-import 'dart:typed_data';
-import 'package:flutter/material.dart';
-import 'package:nash/pages/market_page.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:nash/main.dart';
-import 'package:nash/pages/login.dart';
+import 'dart:ui';
 
-// Local toast helper (overlay) — keeps behavior consistent with login page.
-void showToast(BuildContext context, String message, {bool isError = false, Duration duration = const Duration(seconds: 3)}) {
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'package:nash/main.dart';
+import 'package:nash/pages/login.dart' as login_page;
+import 'package:nash/pages/market_page.dart';
+import 'package:nash/services/supabase_service.dart';
+import 'package:nash/widgets/top_navbar.dart';
+
+void showToast(BuildContext context, String message,
+    {bool isError = false, Duration duration = const Duration(seconds: 3)}) {
   final overlay = Overlay.of(context);
+  if (overlay == null) return;
 
   final theme = Theme.of(context);
   final entry = OverlayEntry(
@@ -25,13 +30,16 @@ void showToast(BuildContext context, String message, {bool isError = false, Dura
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
                 color: isError ? Colors.redAccent : Colors.black87,
-                borderRadius: BorderRadius.circular(10),
-                boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 8, offset: const Offset(0, 4))],
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 4)),
+                ],
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(isError ? Icons.error_outline : Icons.check_circle_outline, color: Colors.white, size: 20),
+                  Icon(isError ? Icons.error_outline : Icons.check_circle_outline,
+                      color: Colors.white, size: 20),
                   const SizedBox(width: 10),
                   Flexible(
                     child: Text(
@@ -57,7 +65,10 @@ void showToast(BuildContext context, String message, {bool isError = false, Dura
 }
 
 class AccountPage extends StatefulWidget {
-  const AccountPage({super.key});
+  final String? userId;
+  final bool readOnly;
+  final bool anonymousDisplay;
+  const AccountPage({super.key, this.userId, this.readOnly = false, this.anonymousDisplay = false});
 
   @override
   State<AccountPage> createState() => _AccountPageState();
@@ -65,124 +76,140 @@ class AccountPage extends StatefulWidget {
 
 class _AccountPageState extends State<AccountPage> {
   final _usernameController = TextEditingController();
-  final _websiteController = TextEditingController();
 
-  String? _avatarUrl;
-  var _loading = true;
+  bool _loadingProfile = true;
+  bool _loadingFinancial = true;
+  String? _userId;
 
-  /// Called once a user id is received within `onAuthenticated()`
-  Future<void> _getProfile() async {
-    setState(() {
-      _loading = true;
-    });
+  int? _nashScore;
+  double _balance = 0;
 
-    try {
-      final userId = supabase.auth.currentSession!.user.id;
-      final data =
-          await supabase.from('profiles').select().eq('id', userId).single();
-      _usernameController.text = (data['username'] ?? '') as String;
-      _websiteController.text = (data['website'] ?? '') as String;
+  double _totalProfit = 0;
+  double _totalLending = 0;
+  double _totalBorrowing = 0;
 
-    } on PostgrestException catch (error) {
-      if (mounted) showToast(context, error.message, isError: true);
-    } catch (error) {
-      if (mounted) {
-        showToast(context, 'Unexpected error occurred', isError: true);
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-        });
-      }
+  List<Map<String, dynamic>> _profitRows = [];
+  List<Map<String, dynamic>> _lendingRows = [];
+  List<Map<String, dynamic>> _borrowingRows = [];
+  String _selectedMetric = 'Profits';
+
+  String? _processingLoanId;
+
+  bool get _isOwnAccount {
+    final currentId = supabase.auth.currentUser?.id;
+    return !widget.readOnly && currentId != null && currentId == _userId;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _userId = widget.userId ?? supabase.auth.currentUser?.id;
+    if (_userId == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        showToast(context, 'User session not found', isError: true);
+      });
+    } else {
+      _loadProfile();
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadFinancialData());
     }
   }
 
-  /// Called when user taps `Update` button
-  Future<void> _updateProfile() async {
-    setState(() {
-      _loading = true;
-    });
-    final userName = _usernameController.text.trim();
-    final website = _websiteController.text.trim();
-    final user = supabase.auth.currentUser;
-    final updates = {
-      'id': user!.id,
-      'username': userName,
-      'website': website,
-      'updated_at': DateTime.now().toIso8601String(),
-    };
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadProfile() async {
+    if (_userId == null) return;
+    setState(() => _loadingProfile = true);
     try {
-      await supabase.from('profiles').upsert(updates);
-      if (mounted) showToast(context, 'Successfully updated profile!');
+      final profile = await supabaseService.fetchProfile(_userId!);
+      if (profile != null) {
+        _usernameController.text = (profile['username'] ?? '') as String;
+        final score = profile['nashScore'];
+        if (score is num) _nashScore = score.toInt();
+        _balance = _asDouble(profile['balance']);
+      }
     } on PostgrestException catch (error) {
       if (mounted) showToast(context, error.message, isError: true);
     } catch (error) {
-      if (mounted) {
-        showToast(context, 'Unexpected error occurred', isError: true);
-      }
+      if (mounted) showToast(context, 'Unable to load profile', isError: true);
     } finally {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-        });
-      }
+      if (mounted) setState(() => _loadingProfile = false);
     }
   }
 
-  /// Show a dialog that allows editing username and avatar URL (photo)
-  Future<bool?> _showEditProfileDialog() async {
-    final username = _usernameController.text.trim();
-  final usernameController = TextEditingController(text: username);
+  Future<void> _loadFinancialData() async {
+    if (_userId == null) return;
+    setState(() => _loadingFinancial = true);
+    try {
+      final investments = await supabaseService.fetchInvestmentsForUser(_userId!);
+      final parsedInvestments = investments
+          .map((row) => {
+                ...row,
+                'created_at': DateTime.tryParse(row['created_at']?.toString() ?? ''),
+                'amount': _asDouble(row['amount']),
+                'profit_amount': _asDouble(row['profit_amount']),
+              })
+          .where((row) => row['created_at'] != null)
+          .toList()
+        ..sort((a, b) => (a['created_at'] as DateTime).compareTo(b['created_at'] as DateTime));
 
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit profile'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextFormField(
-              controller: usernameController,
-              decoration: const InputDecoration(labelText: 'Username'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
-          ElevatedButton(
-              onPressed: () async {
-              final newName = usernameController.text.trim();
-              Navigator.of(context).pop(true);
+      final deals = await supabaseService.fetchBankDeals();
+      final parsedLending = deals
+          .where((row) => row['lender_id'] == _userId)
+          .map((row) => {
+                ...row,
+                'created_at': DateTime.tryParse(row['created_at']?.toString() ?? ''),
+                'amount': _asDouble(row['amount']),
+              })
+          .where((row) => row['created_at'] != null)
+          .toList()
+        ..sort((a, b) => (a['created_at'] as DateTime).compareTo(b['created_at'] as DateTime));
 
-              setState(() => _loading = true);
-              try {
-                final user = supabase.auth.currentUser;
-                final updates = {
-                  'id': user!.id,
-                  'username': newName,
-                  'updated_at': DateTime.now().toIso8601String(),
-                };
-                await supabase.from('profiles').upsert(updates);
-                if (mounted) {
-                  _usernameController.text = newName;
-                }
-              } on PostgrestException catch (error) {
-                if (mounted) showToast(context, error.message, isError: true);
-              } catch (error) {
-                if (mounted) showToast(context, 'Unexpected error occurred', isError: true);
-              } finally {
-                if (mounted) setState(() => _loading = false);
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
+      final parsedBorrowing = deals
+          .where((row) => row['lendee_id'] == _userId)
+          .map((row) => {
+                ...row,
+                'created_at': DateTime.tryParse(row['created_at']?.toString() ?? ''),
+                'amount': _asDouble(row['amount']),
+              })
+          .where((row) => row['created_at'] != null)
+          .toList()
+        ..sort((a, b) => (a['created_at'] as DateTime).compareTo(b['created_at'] as DateTime));
 
-    usernameController.dispose();
-    return result == true;
+      if (!mounted) return;
+      setState(() {
+        _profitRows = parsedInvestments;
+        _lendingRows = parsedLending;
+        _borrowingRows = parsedBorrowing;
+        _totalProfit = _profitRows.fold<double>(0, (sum, row) => sum + (row['profit_amount'] as double));
+        _totalLending = _lendingRows.fold<double>(0, (sum, row) => sum + (row['amount'] as double));
+        _totalBorrowing = _borrowingRows.fold<double>(0, (sum, row) => sum + (row['amount'] as double));
+
+        if (_profitRows.isNotEmpty) {
+          _selectedMetric = 'Profits';
+        } else if (_lendingRows.isNotEmpty) {
+          _selectedMetric = 'Lending';
+        } else if (_borrowingRows.isNotEmpty) {
+          _selectedMetric = 'Borrowing';
+        }
+      });
+    } on PostgrestException catch (error) {
+      if (mounted) showToast(context, error.message, isError: true);
+    } catch (error) {
+      if (mounted) showToast(context, 'Unable to load financial data', isError: true);
+    } finally {
+      if (mounted) setState(() => _loadingFinancial = false);
+    }
+  }
+
+  Future<void> _refreshAll() async {
+    await Future.wait([
+      _loadProfile(),
+      _loadFinancialData(),
+    ]);
   }
 
   Future<void> _signOut() async {
@@ -190,221 +217,507 @@ class _AccountPageState extends State<AccountPage> {
       await supabase.auth.signOut();
     } on AuthException catch (error) {
       if (mounted) showToast(context, error.message, isError: true);
-    } catch (error) {
-      if (mounted) {
-        showToast(context, 'Unexpected error occurred', isError: true);
-      }
+      return;
+    } catch (_) {
+      if (mounted) showToast(context, 'Unexpected error occurred', isError: true);
+      return;
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const login_page.LoginPage()),
+    );
+  }
+
+  Future<void> _payLoan(Map<String, dynamic> loanRow) async {
+    if (!_isOwnAccount) return;
+
+    final loanId = loanRow['loan_id']?.toString();
+    final loanRowId = loanRow['id']?.toString();
+    final lenderId = loanRow['lender_id']?.toString();
+    final lendeeId = loanRow['lendee_id']?.toString();
+    final amount = _asDouble(loanRow['amount']);
+
+    if (loanId == null || loanRowId == null || lenderId == null || lendeeId == null) {
+      showToast(context, 'Loan data unavailable', isError: true);
+      return;
+    }
+
+    if (_balance < amount) {
+      showToast(context, 'Insufficient balance to repay this loan', isError: true);
+      return;
+    }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Repay loan'),
+        content: Text('Repay ${_formatCurrency(amount)} from your balance?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Confirm')),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _processingLoanId = loanId);
+    try {
+      await supabaseService.payOffLoan(
+        loanRowId: loanRowId,
+        loanId: loanId,
+        lenderId: lenderId,
+        lendeeId: lendeeId,
+        amount: amount,
+      );
+      if (!mounted) return;
+      showToast(context, 'Loan repaid successfully');
+      await _refreshAll();
+    } on PostgrestException catch (error) {
+      if (mounted) showToast(context, error.message, isError: true);
+    } catch (_) {
+      if (mounted) showToast(context, 'Unable to process repayment', isError: true);
     } finally {
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const LoginPage()),
-        );
-      }
+      if (mounted) setState(() => _processingLoanId = null);
     }
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _getProfile();
-  }
-
-  @override
-  void dispose() {
-    _usernameController.dispose();
-    _websiteController.dispose();
-    super.dispose();
+  Future<void> _payNextOutstanding() async {
+    final items = _outstandingBorrowings;
+    if (items.isEmpty) {
+      showToast(context, 'No outstanding loans to repay');
+      return;
+    }
+    await _payLoan(items.first);
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Colors.deepPurple, Colors.white12],
+      appBar: TopNavbar(
+        showBack: widget.readOnly,
+        onBack: () => Navigator.of(context).maybePop(),
+        onLogout: _isOwnAccount ? _signOut : null,
+        onGoMarket: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const MarketPage()),
+        ),
+      ),
+      body: RefreshIndicator(
+        onRefresh: _refreshAll,
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            _buildProfileCard(context),
+            const SizedBox(height: 16),
+            _buildMetricRow(context),
+            const SizedBox(height: 24),
+            _buildMetricDetails(context),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileCard(BuildContext context) {
+    final theme = Theme.of(context);
+    final initials = widget.anonymousDisplay
+        ? 'A'
+        : (_usernameController.text.isNotEmpty
+            ? _usernameController.text.substring(0, 1).toUpperCase()
+            : 'U');
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withOpacity(0.12)),
+            boxShadow: const [
+              BoxShadow(color: Colors.black26, blurRadius: 16, offset: Offset(0, 10)),
+            ],
+          ),
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 42,
+                backgroundColor: theme.colorScheme.primary.withOpacity(0.3),
+                child: Text(
+                  initials,
+                  style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(width: 18),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _loadingProfile
+                              ? const LinearProgressIndicator(minHeight: 6)
+                              : Text(
+                                  widget.anonymousDisplay
+                                      ? 'Anonymous'
+                                      : (_usernameController.text.isNotEmpty
+                                          ? _usernameController.text
+                                          : 'Unknown user'),
+                                  style: theme.textTheme.headlineSmall,
+                                ),
+                        ),
+                        SizedBox(
+                          height: 36,
+                          width: 36,
+                          child: Center(
+                            child: IconButton(
+                              tooltip: 'Refresh',
+                              padding: EdgeInsets.zero,
+                              onPressed: _refreshAll,
+                              icon: const Icon(Icons.refresh),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Balance',
+                      style: theme.textTheme.labelSmall?.copyWith(color: Colors.white70, letterSpacing: 1.4),
+                    ),
+                    Text(
+                      _formatCurrency(_balance),
+                      style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700, fontSize: 26),
+                    ),
+                    if (_isOwnAccount && _outstandingBorrowings.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                              backgroundColor: theme.colorScheme.primary,
+                              foregroundColor: theme.colorScheme.onPrimary,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            ),
+                            icon: _processingLoanId != null
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.payments_outlined),
+                            label: const Text('Pay back loan'),
+                            onPressed: _processingLoanId != null ? null : _payNextOutstanding,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              _buildNashScoreBadge(theme),
+            ],
           ),
         ),
-        child: Stack(
-          children: [
-            // Top banner with centered plus icon
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                height: 64,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.deepPurple, theme.colorScheme.secondary],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 8, offset: const Offset(0, 4))],
-                ),
-                child: SafeArea(
-                  child: Stack(
-                    children: [
-                      Positioned(
-                        top: 12,
-                        left: 12,
-                        child: GestureDetector(
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const AccountPage()),
-                          ),
-                          child: CircleAvatar(
-                            radius: 18,
-                            backgroundColor: Colors.white24,
-                            child: const Icon(
-                              Icons.account_circle_outlined,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                          ),
-                        ),
-                      ),
+      ),
+    );
+  }
 
-                      Positioned(
-                        top: 8,
-                        right: 8,
-                        child: IconButton(
-                          onPressed: () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const MarketPage()),
-                          ),
-                          icon: const Icon(Icons.storefront_outlined, size: 28, color: Colors.white),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+  Widget _buildNashScoreBadge(ThemeData theme) {
+    final score = _nashScore?.toString() ?? '—';
+    return Container(
+      width: 120,
+      height: 120,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: LinearGradient(
+          colors: [theme.colorScheme.primary, theme.colorScheme.secondary],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 12, offset: Offset(0, 6))],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            score,
+            style: theme.textTheme.displaySmall?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
             ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'NASH',
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: Colors.white70,
+              letterSpacing: 2,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-            Positioned.fill(
-              top: 160,
-              child: Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Profile picture (centered below banner)
-                      Container(
-                        width: 128,
-                        height: 128,
+  Widget _buildMetricRow(BuildContext context) {
+    if (_loadingFinancial) {
+      return const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 32), child: CircularProgressIndicator()));
+    }
+
+    final metrics = [
+      _MetricCardData('Profits', _totalProfit),
+      _MetricCardData('Lending', _totalLending),
+      _MetricCardData('Borrowing', _totalBorrowing),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth > 720) {
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: metrics
+                .map(
+                  (m) => Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: _MetricCard(
+                        data: m,
+                        isSelected: _selectedMetric == m.label,
+                        onTap: () => setState(() => _selectedMetric = m.label),
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+          );
+        }
+
+        return Column(
+          children: metrics
+              .map((m) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: _MetricCard(
+                      data: m,
+                      isSelected: _selectedMetric == m.label,
+                      onTap: () => setState(() => _selectedMetric = m.label),
+                    ),
+                  ))
+              .toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildMetricDetails(BuildContext context) {
+    List<Map<String, dynamic>> rows;
+    List<String> columns;
+
+    switch (_selectedMetric) {
+      case 'Lending':
+        rows = _lendingRows;
+        columns = const ['Date', 'Loan ID', 'Amount', 'Outcome', 'Status', 'Settled'];
+        break;
+      case 'Borrowing':
+        rows = _borrowingRows;
+        columns = const ['Date', 'Loan ID', 'Amount', 'Outcome', 'Status', 'Settled'];
+        break;
+      case 'Profits':
+      default:
+        rows = _profitRows;
+        columns = const ['Date', 'Loan ID', 'Selection', 'Outcome', 'Amount', 'Profit'];
+        break;
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: Container(
+          height: 380,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: Colors.white.withOpacity(0.16)),
+          ),
+          padding: const EdgeInsets.all(18),
+          child: rows.isEmpty
+              ? const Center(child: Text('No data available yet.'))
+              : Scrollbar(
+                  child: ListView.separated(
+                    itemCount: rows.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final row = rows[index];
+                      return Container(
                         decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: LinearGradient(
-                            colors: [Colors.red, Colors.white],
-                            begin: Alignment.topRight,
-                            end: Alignment.bottomLeft,
-                          ),
-                          boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 8, offset: const Offset(0, 4))],
+                          color: Colors.black.withOpacity(0.25),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(color: Colors.white.withOpacity(0.1)),
                         ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          (_usernameController.text.isNotEmpty ? _usernameController.text[0].toUpperCase() : 'U'),
-                          style: theme.textTheme.headlineLarge?.copyWith(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 48),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        _usernameController.text.isNotEmpty ? _usernameController.text : 'Unknown User',
-                        style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Edit Profile button
-                      ElevatedButton.icon(
-                        onPressed: _loading ? null : () => _showEditProfileDialog(),
-                        icon: const Icon(Icons.edit, size: 18),
-                        label: const Text('Edit Username'),
-                        style: ElevatedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-                      ),
-
-                      TextButton(onPressed: _signOut, child: const Text('Sign Out')),
-                      const SizedBox(height: 12),
-
-                      // Tab container with 3 tabs (Posts / Info / Settings)
-                      SizedBox(
-                        width: double.infinity,
-                        child: Card(
-                          elevation: 6,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          child: DefaultTabController(
-                            length: 3,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                                  decoration: BoxDecoration(
-                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-                                    color: theme.colorScheme.onPrimary,
-                                  ),
-                                  child: TabBar(
-                                    labelColor: theme.colorScheme.primary,
-                                    unselectedLabelColor: theme.textTheme.bodyMedium?.color?.withOpacity(0.6),
-                                    indicator: UnderlineTabIndicator(
-                                      borderSide: BorderSide(width: 3.0, color: theme.colorScheme.primary),
-                                      insets: const EdgeInsets.symmetric(horizontal: 24),
-                                    ),
-                                    tabs: const [
-                                      Tab(text: 'PROFIT'),
-                                      Tab(text: 'LENDING'),
-                                      Tab(text: 'BORROWING'),
-                                    ],
-                                  ),
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ...columns.map(
+                              (label) => Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 2),
+                                child: _buildRowLine(
+                                  label,
+                                  _valueForColumn(label, row),
                                 ),
-                                SizedBox(
-                                  height: 260,
-                                  child: TabBarView(
-                                    children: [
-                                      // Profit tab - placeholder
-                                      Padding(
-                                        padding: const EdgeInsets.all(16.0),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                          ],
-                                        ),
-                                      ),
-
-                                      // Lending tab - placeholder
-                                      Padding(
-                                        padding: const EdgeInsets.all(16.0),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.center,
-                                          children: [
-                                          ],
-                                        ),
-                                      ),
-
-                                      // Borrowing tab - placeholder
-                                      Padding(
-                                        padding: const EdgeInsets.all(16.0),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                                          children: [],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
-                          ),
+                            if (_selectedMetric == 'Borrowing' && _isOwnAccount && row['done'] != true)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 12),
+                                child: Align(
+                                  alignment: Alignment.centerRight,
+                                  child: FilledButton.icon(
+                                    onPressed: (_processingLoanId == row['loan_id']?.toString() || _balance < _asDouble(row['amount']))
+                                        ? null
+                                        : () => _payLoan(row),
+                                    icon: _processingLoanId == row['loan_id']?.toString()
+                                        ? const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(strokeWidth: 2),
+                                          )
+                                        : const Icon(Icons.attach_money_rounded),
+                                    label: Text(_balance < _asDouble(row['amount'])
+                                        ? 'Insufficient balance'
+                                        : 'Repay now'),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
-                      ),
-                    ],
+                      );
+                    },
                   ),
                 ),
-              ),
+        ),
+      ),
+    );
+  }
+
+  String _valueForColumn(String label, Map<String, dynamic> row) {
+    switch (label) {
+      case 'Date':
+        return _formatDate(row['created_at']);
+      case 'Loan ID':
+        return row['loan_id']?.toString() ?? '—';
+      case 'Selection':
+        return row['selection']?.toString() ?? '—';
+      case 'Outcome':
+        return row['outcome']?.toString() ?? '—';
+      case 'Amount':
+        return _formatCurrency(row['amount']);
+      case 'Profit':
+        return _formatCurrency(row['profit_amount']);
+      case 'Status':
+        return row['done'] == true ? 'Complete' : 'Active';
+      default:
+        return row[label]?.toString() ?? '—';
+    }
+  }
+
+  Widget _buildRowLine(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          SizedBox(width: 120, child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600))),
+          Expanded(child: Text(value)),
+        ],
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> get _outstandingBorrowings =>
+      _borrowingRows.where((row) => row['done'] != true).toList()
+        ..sort((a, b) {
+          final da = a['created_at'];
+          final db = b['created_at'];
+          if (da is DateTime && db is DateTime) return da.compareTo(db);
+          return 0;
+        });
+
+  static double _asDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  String _formatCurrency(dynamic value) {
+    if (value == null) return '-';
+    if (value is num) {
+      return '\$${value.toStringAsFixed(2)}';
+    }
+    final parsed = double.tryParse(value.toString());
+    return parsed != null ? '\$${parsed.toStringAsFixed(2)}' : value.toString();
+  }
+
+  String _formatDate(dynamic value) {
+    if (value is DateTime) {
+      return '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')} '
+          '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+    }
+    return value?.toString() ?? '—';
+  }
+}
+
+class _MetricCardData {
+  const _MetricCardData(this.label, this.value);
+  final String label;
+  final double value;
+}
+
+class _MetricCard extends StatelessWidget {
+  const _MetricCard({required this.data, required this.isSelected, required this.onTap});
+
+  final _MetricCardData data;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final background = isSelected ? Colors.white.withOpacity(0.18) : Colors.white.withOpacity(0.07);
+    final borderColor = isSelected ? Colors.white.withOpacity(0.3) : Colors.white.withOpacity(0.08);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+            decoration: BoxDecoration(
+              color: background,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: borderColor, width: isSelected ? 1.5 : 1),
             ),
-          ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(data.label.toUpperCase(), style: theme.textTheme.labelSmall?.copyWith(letterSpacing: 1.6)),
+                const SizedBox(height: 8),
+                Text(
+                  '\$${data.value.toStringAsFixed(2)}',
+                  style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

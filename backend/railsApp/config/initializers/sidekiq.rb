@@ -7,10 +7,10 @@ Sidekiq.configure_server do |c|
 
   # Load cron schedule on server boot
   schedule = {
-    # “every hour at minute 12”
-    "cleanup_finished_jobs" => {
-      "cron"  => "12 * * * *",
-      "class" => "CleanupFinishedJobsJob"
+    "loan_settlement_job" => {
+      "cron"  => "*/20 * * * *",
+      "class" => "LoanSettlementJob",
+      "queue" => "default"
     }
   }
   Sidekiq::Cron::Job.load_from_hash(schedule)

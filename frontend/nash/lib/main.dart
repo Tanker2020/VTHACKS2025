@@ -3,7 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:nash/pages/account_page.dart';
-import 'package:nash/pages/login.dart';
+import 'package:nash/pages/login.dart' as login_page;
+import 'package:nash/theme/app_theme.dart';
 
 Future<void> main() async {
   await dotenv.load(fileName: ".env");
@@ -22,37 +23,21 @@ class MyApp extends StatelessWidget {
   const MyApp({super.key});
   @override
   Widget build(BuildContext context) {
+    final initialHome = supabase.auth.currentSession == null
+        ? const login_page.LoginPage()
+        : const AccountPage();
+
     return MaterialApp(
-      title: 'Supabase Flutter',
-      theme: ThemeData.dark().copyWith(
-        primaryColor: Colors.green,
-        textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(
-            foregroundColor: Colors.green,
-          ),
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            foregroundColor: Colors.white,
-            backgroundColor: Colors.green,
-          ),
-        ),
-      ),
-      home: supabase.auth.currentSession == null
-          ? const LoginPage()
-          : const AccountPage(),
+      debugShowCheckedModeBanner: false,
+      title: 'Nash',
+      theme: AppTheme.themeData,
+      home: initialHome,
     );
   }
 }
 extension ContextExtension on BuildContext {
   void showSnackBar(String message, {bool isError = false}) {
-    ScaffoldMessenger.of(this).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError
-            ? Theme.of(this).colorScheme.error
-            : Theme.of(this).snackBarTheme.backgroundColor,
-      ),
-    );
+    // Fallback to overlay-based toast in case the ScaffoldMessenger isn't available.
+    login_page.showToast(this, message, isError: isError);
   }
 }
