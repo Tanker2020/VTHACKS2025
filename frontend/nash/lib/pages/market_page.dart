@@ -107,10 +107,10 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
       case 'Oldest':
         sorter = (a, b) => compareCreated(a, b, descending: false);
         break;
-      case 'Amount ↑':
+      case 'Amount (ASC)':
         sorter = (a, b) => compareAmount(a, b, ascending: true);
         break;
-      case 'Amount ↓':
+      case 'Amount (DESC)':
         sorter = (a, b) => compareAmount(a, b, ascending: false);
         break;
       case 'Newest':
@@ -140,11 +140,18 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
       appBar: TopNavbar(
         showBack: true,
         onBack: () => Navigator.of(context).maybePop(),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MarketBuilderPage())).then((_) => _loadData()),
-        icon: const Icon(Icons.add_circle_outline),
-        label: const Text('New Request'),
+        trailing: ElevatedButton (
+          onPressed: _openNewRequest,
+          style: FilledButton.styleFrom(
+            foregroundColor: theme.colorScheme.onPrimary,
+            backgroundColor: theme.colorScheme.primary,
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+            textStyle: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          child: const Icon(Icons.add_circle_outline),
+
+        ),
       ),
       body: RefreshIndicator(
         onRefresh: _loadData,
@@ -226,6 +233,13 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
     );
   }
 
+  Future<void> _openNewRequest() async {
+    await Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const MarketBuilderPage()));
+    if (!mounted) return;
+    await _loadData();
+  }
+
   Widget _buildSearchBar(ThemeData theme) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(18),
@@ -235,7 +249,7 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
           controller: _searchController,
           decoration: InputDecoration(
             prefixIcon: const Icon(Icons.search),
-            hintText: 'Search by borrower or loan id',
+            hintText: 'Search by request ID',
             filled: true,
             fillColor: Colors.white.withOpacity(0.12),
             border: InputBorder.none,
@@ -246,7 +260,7 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
   }
 
   Widget _buildSortChips(ThemeData theme) {
-    final options = ['Newest', 'Oldest', 'Amount ↑', 'Amount ↓'];
+    final options = ['Newest', 'Oldest', 'Amount (ASC)', 'Amount (DESC)'];
     return SizedBox(
       height: 48,
       child: ListView.separated(
@@ -264,7 +278,7 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
             },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(24),
                 gradient: selected
@@ -311,8 +325,6 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
       separatorBuilder: (_, __) => const SizedBox(height: 16),
       itemBuilder: (context, index) {
         final row = rows[index];
-        final borrowerProfile = row['lendee_profile'] ?? row['lender_profile'];
-        final borrowerUsername = borrowerProfile != null ? 'Anonymous' : null;
         final createdAt = DateTime.tryParse(row['created_at']?.toString() ?? '');
         final formattedDate = createdAt != null
             ? '${createdAt.year}-${createdAt.month.toString().padLeft(2, '0')}-${createdAt.day.toString().padLeft(2, '0')}'
@@ -321,7 +333,7 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
         final requestId = row['req_id']?.toString() ?? '—';
         final loanId = isLoanRequest ? null : row['loan_id']?.toString();
         final outcome = row['outcome']?.toString();
-
+        
         final borrowerId = (row['lendee_id'] ?? row['lendee_profile']?['id'])?.toString();
         final lenderId = row['lender_id']?.toString();
 
@@ -349,15 +361,6 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Expanded(
-                        child: Text(
-                          borrowerUsername != null
-                              ? borrowerUsername
-                              : (isLoanRequest ? 'Request $requestId' : 'Loan ${loanId ?? requestId}'),
-                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
                       Text(formattedDate, style: theme.textTheme.bodySmall?.copyWith(color: Colors.white70)),
                     ],
                   ),
@@ -365,53 +368,62 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
                   Text('Amount: \$${amount.toStringAsFixed(2)}', style: theme.textTheme.titleLarge?.copyWith(fontSize: 26)),
                   const SizedBox(height: 8),
                   if (isLoanRequest)
-                    Row(
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
                       children: [
-                        Chip(label: Text('Duration: ${row['end_time'] ?? '—'} days')),
-                        const SizedBox(width: 12),
-                        Chip(label: Text('Request ID: $requestId')),
+                        _buildInfoChip(theme, 'Duration: ${row['end_time'] ?? '—'} days', icon: Icons.schedule_outlined),
+                        _buildInfoChip(theme, 'Request ID: $requestId', icon: Icons.tag_outlined),
                       ],
                     )
                   else
-                    Row(
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
                       children: [
-                        Chip(label: Text('Outcome: ${outcome ?? 'TBD'}')),
-                        const SizedBox(width: 12),
-                        Chip(label: Text('Loan ID: ${loanId ?? requestId}')),
+                        _buildInfoChip(theme, 'Outcome: ${outcome ?? 'TBD'}', icon: Icons.flag_outlined),
+                        _buildInfoChip(theme, 'Loan ID: ${loanId ?? requestId}', icon: Icons.confirmation_number_outlined),
                       ],
                     ),
                   const SizedBox(height: 16),
-                  Row(
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      TextButton.icon(
-                        onPressed: () => _viewAccount(
+                      _ActionChip(
+                        icon: Icons.person_outline,
+                        label: 'View borrower',
+                        onTap: () => _viewAccount(
                           borrowerId,
                           fallbackMessage: 'Borrower profile unavailable',
                         ),
-                        icon: const Icon(Icons.person_outline),
-                        label: const Text('View borrower'),
                       ),
-                      const SizedBox(width: 16),
                       if (!isLoanRequest)
-                        TextButton.icon(
-                          onPressed: () => _viewAccount(
+                        _ActionChip(
+                          icon: Icons.account_balance_outlined,
+                          label: 'View lender',
+                          onTap: () => _viewAccount(
                             lenderId,
                             fallbackMessage: 'Lender profile unavailable',
                           ),
-                          icon: const Icon(Icons.account_balance_outlined),
-                          label: const Text('View lender'),
                         ),
-                      if (!isLoanRequest) const SizedBox(width: 16),
-                      ElevatedButton(
-                        onPressed: () {
-                          if (isLoanRequest) {
-                            login_page.showToast(context, 'Lending flow coming soon');
-                          } else {
-                            _showInvestmentSheet(row);
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14)),
-                        child: Text(isLoanRequest ? 'Lend' : 'Track'),
+                      SizedBox(
+                        height: 44,
+                        child: FilledButton(
+                          onPressed: () {
+                            if (isLoanRequest) {
+                              login_page.showToast(context, 'Lending flow coming soon');
+                            } else {
+                              _showInvestmentSheet(row);
+                            }
+                          },
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                          ),
+                          child: Text(isLoanRequest ? 'Lend' : 'Track'),
+                        ),
                       ),
                     ],
                   ),
@@ -421,6 +433,48 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
           ),
         );
       },
+    );
+  }
+
+  Widget _buildInfoChip(ThemeData theme, String text, {IconData? icon}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            theme.colorScheme.primary.withOpacity(0.24),
+            theme.colorScheme.secondary.withOpacity(0.20),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white.withOpacity(0.20)),
+        boxShadow: [
+          BoxShadow(
+            color: theme.colorScheme.primary.withOpacity(0.18),
+            blurRadius: 10,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 17, color: Colors.white.withOpacity(0.92)),
+            const SizedBox(width: 6),
+          ],
+          Text(
+            text,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.3,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -503,11 +557,11 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
                     spacing: 12,
                     runSpacing: 8,
                     children: [
-                      _metaChip('Lender', 'Anonymous'),
-                      _metaChip('Borrower', 'Anonymous'),
-                      _metaChip('Created', createdLabel),
+                      _metaChip(theme, 'Lender', 'Anonymous', icon: Icons.account_balance_wallet_outlined),
+                      _metaChip(theme, 'Borrower', 'Anonymous', icon: Icons.person_outline),
+                      _metaChip(theme, 'Created', createdLabel, icon: Icons.event_outlined),
                       if (expiresAt != null)
-                        _metaChip('Time left', durationLabel),
+                        _metaChip(theme, 'Time left', durationLabel, icon: Icons.hourglass_bottom_rounded),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -561,30 +615,12 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
                           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                         ),
                         icon: const Icon(Icons.show_chart_outlined),
-                        label: const Text('View price graph'),
+                        label: const Text('Purchase'),
                       ),
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _PositionButton(
-                          label: 'Open LONG position',
-                          color: Colors.greenAccent,
-                          onTap: () => _openPosition(isLong: true, deal: deal),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _PositionButton(
-                          label: 'Open SHORT position',
-                          color: Colors.redAccent,
-                          onTap: () => _openPosition(isLong: false, deal: deal),
-                        ),
-                      ),
-                    ],
-                  ),
+
                 ],
               ),
             ),
@@ -594,18 +630,11 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
     );
   }
 
-  Widget _metaChip(String label, String value) {
-    return Chip(
-      backgroundColor: Colors.white.withOpacity(0.08),
-      shape: StadiumBorder(side: BorderSide(color: Colors.white.withOpacity(0.18))),
-      label: RichText(
-        text: TextSpan(
-          children: [
-            TextSpan(text: '$label: ', style: const TextStyle(fontWeight: FontWeight.w600)),
-            TextSpan(text: value),
-          ],
-        ),
-      ),
+  Widget _metaChip(ThemeData theme, String label, String value, {IconData? icon}) {
+    return _buildInfoChip(
+      theme,
+      '$label: $value',
+      icon: icon,
     );
   }
 
@@ -738,6 +767,54 @@ class _MarketPageState extends State<MarketPage> with SingleTickerProviderStateM
   }
 }
 
+class _ActionChip extends StatelessWidget {
+  const _ActionChip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              theme.colorScheme.primary.withOpacity(0.28),
+              theme.colorScheme.secondary.withOpacity(0.22),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          border: Border.all(color: Colors.white.withOpacity(0.18)),
+        ),
+        child: TextButton.icon(
+          onPressed: onTap,
+          style: TextButton.styleFrom(
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          ),
+          icon: Icon(icon, size: 18),
+          label: Text(
+            label,
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _PositionButton extends StatelessWidget {
   const _PositionButton({
     required this.label,
@@ -748,7 +825,6 @@ class _PositionButton extends StatelessWidget {
   final String label;
   final Color color;
   final VoidCallback onTap;
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -961,7 +1037,7 @@ class _PriceGraphSheet extends StatelessWidget {
           BoxShadow(color: Colors.black.withOpacity(0.25), blurRadius: 20, offset: const Offset(0, -12)),
         ],
       ),
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+      padding: EdgeInsets.fromLTRB(10, 10, 10, 0),
       child: SafeArea(
         top: false,
         child: Column(
@@ -997,7 +1073,7 @@ class _PriceGraphSheet extends StatelessWidget {
               ],
             ),
             if (onLong != null && onShort != null) ...[
-              const SizedBox(height: 22),
+              const SizedBox(height: 12),
               Text(
                 'Open a position',
                 style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
@@ -1022,6 +1098,7 @@ class _PriceGraphSheet extends StatelessWidget {
                   ),
                 ],
               ),
+              const SizedBox(height: 14)
             ],
           ],
         ),

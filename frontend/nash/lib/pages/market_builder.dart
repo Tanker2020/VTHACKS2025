@@ -17,14 +17,26 @@ class _MarketBuilderPageState extends State<MarketBuilderPage> {
   final _amountController = TextEditingController();
   final _purposeController = TextEditingController();
   int _durationDays = 6;
-  String _urgency = 'Normal';
   bool _submitting = false;
 
   @override
+  void initState() {
+    super.initState();
+    _amountController.addListener(_onFormChanged);
+    _purposeController.addListener(_onFormChanged);
+  }
+
+  @override
   void dispose() {
+    _amountController.removeListener(_onFormChanged);
     _amountController.dispose();
+    _purposeController.removeListener(_onFormChanged);
     _purposeController.dispose();
     super.dispose();
+  }
+
+  void _onFormChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _submit() async {
@@ -50,7 +62,6 @@ class _MarketBuilderPageState extends State<MarketBuilderPage> {
       _purposeController.clear();
       setState(() {
         _durationDays = 6;
-        _urgency = 'Normal';
       });
     } on PostgrestException catch (error) {
       if (mounted) {
@@ -125,19 +136,6 @@ class _MarketBuilderPageState extends State<MarketBuilderPage> {
                           },
                         ),
                         const SizedBox(height: 16),
-                        Text('Urgency', style: theme.textTheme.titleSmall),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 12,
-                          children: ['Low', 'Normal', 'High'].map((value) {
-                            return ChoiceChip(
-                              label: Text(value),
-                              selected: _urgency == value,
-                              onSelected: (_) => setState(() => _urgency = value),
-                            );
-                          }).toList(),
-                        ),
-                        const SizedBox(height: 16),
                         Text('Duration (days)', style: theme.textTheme.titleSmall),
                         Slider(
                           value: _durationDays.toDouble(),
@@ -170,7 +168,6 @@ class _MarketBuilderPageState extends State<MarketBuilderPage> {
                         const SizedBox(height: 12),
                         _LoanPreview(
                           amountText: _amountController.text,
-                          urgency: _urgency,
                           duration: _durationDays,
                           purpose: _purposeController.text,
                         ),
@@ -190,13 +187,11 @@ class _MarketBuilderPageState extends State<MarketBuilderPage> {
 class _LoanPreview extends StatelessWidget {
   const _LoanPreview({
     required this.amountText,
-    required this.urgency,
     required this.duration,
     required this.purpose,
   });
 
   final String amountText;
-  final String urgency;
   final int duration;
   final String purpose;
 
@@ -214,18 +209,15 @@ class _LoanPreview extends StatelessWidget {
             borderRadius: BorderRadius.circular(18),
             border: Border.all(color: Colors.white.withOpacity(0.12)),
           ),
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('Amount: \$${amount.toStringAsFixed(2)}', style: theme.textTheme.titleLarge),
-              const SizedBox(height: 6),
-              Text('Urgency: $urgency'),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               Text('Duration: $duration days'),
               const SizedBox(height: 8),
-              Text('Purpose:', style: theme.textTheme.titleSmall),
-              Text(purpose.isNotEmpty ? purpose : '—', style: theme.textTheme.bodyMedium),
+              Text('Purpose: $purpose ', style: theme.textTheme.titleSmall),
             ],
           ),
         ),

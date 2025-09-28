@@ -7,7 +7,8 @@ class TopNavbar extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback? onBack;
   final VoidCallback? onLogout;
   final VoidCallback? onGoMarket;
-  const TopNavbar({Key? key, this.showBack = false, this.onBack, this.onLogout, this.onGoMarket}) : super(key: key);
+  final Widget? trailing;
+  const TopNavbar({Key? key, this.showBack = false, this.onBack, this.onLogout, this.onGoMarket, this.trailing}) : super(key: key);
 
   @override
   Size get preferredSize => const Size.fromHeight(84);
@@ -49,15 +50,28 @@ class TopNavbar extends StatelessWidget implements PreferredSizeWidget {
               ),
 
               // right side icons
-              Row(
-                children: [
-                  if (onGoMarket != null)
-                    IconButton(
-                      tooltip: 'Market',
-                      icon: const Icon(Icons.storefront_outlined, color: Colors.white),
-                      onPressed: onGoMarket,
-                    ),
-                ],
+              Builder(
+                builder: (_) {
+                  final widgets = <Widget>[];
+                  if (trailing != null) {
+                    widgets.add(trailing!);
+                  }
+                  if (onGoMarket != null) {
+                    if (widgets.isNotEmpty) widgets.add(const SizedBox(width: 10));
+                    widgets.add(
+                      IconButton(
+                        tooltip: 'Market',
+                        icon: const Icon(Icons.storefront_outlined, color: Colors.white),
+                        onPressed: onGoMarket,
+                      ),
+                    );
+                  }
+
+                  if (widgets.isEmpty) {
+                    return const SizedBox(width: 48);
+                  }
+                  return Row(mainAxisSize: MainAxisSize.min, children: widgets);
+                },
               ),
             ],
           ),

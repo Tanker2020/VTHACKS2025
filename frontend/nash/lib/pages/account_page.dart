@@ -310,11 +310,13 @@ class _AccountPageState extends State<AccountPage> {
                         SizedBox(
                           height: 36,
                           width: 36,
-                          child: IconButton(
-                            tooltip: 'Refresh',
-                            padding: EdgeInsets.zero,
-                            onPressed: _refreshAll,
-                            icon: const Icon(Icons.refresh),
+                          child: Center(
+                            child: IconButton(
+                              tooltip: 'Refresh',
+                              padding: EdgeInsets.zero,
+                              onPressed: _refreshAll,
+                              icon: const Icon(Icons.refresh),
+                            ),
                           ),
                         ),
                       ],
@@ -428,7 +430,6 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   Widget _buildMetricDetails(BuildContext context) {
-    final theme = Theme.of(context);
     List<Map<String, dynamic>> rows;
     List<String> columns;
 

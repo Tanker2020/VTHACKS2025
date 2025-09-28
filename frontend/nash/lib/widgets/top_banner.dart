@@ -13,7 +13,7 @@ class TopBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.primary.withOpacity(0.06),
       ),
-      child: child ?? Row(children: [Text('Nash', style: Theme.of(context).textTheme.headlineSmall)]),
+      child: child ?? Center(child: Text('Nash', style: Theme.of(context).textTheme.headlineSmall)),
     );
   }
 }
