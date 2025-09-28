@@ -1,12 +1,12 @@
-// removed unused import 'dart:typed_data'
 import 'package:flutter/material.dart';
-import 'package:nash/widgets/top_banner.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'package:nash/main.dart';
 import 'package:nash/pages/login.dart';
+import 'package:nash/pages/market_page.dart';
 
-// Local toast helper (overlay) — keeps behavior consistent with login page.
-void showToast(BuildContext context, String message, {bool isError = false, Duration duration = const Duration(seconds: 3)}) {
+void showToast(BuildContext context, String message,
+    {bool isError = false, Duration duration = const Duration(seconds: 3)}) {
   final overlay = Overlay.of(context);
 
   final theme = Theme.of(context);
@@ -26,12 +26,15 @@ void showToast(BuildContext context, String message, {bool isError = false, Dura
               decoration: BoxDecoration(
                 color: isError ? Colors.redAccent : Colors.black87,
                 borderRadius: BorderRadius.circular(10),
-                boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 8, offset: const Offset(0, 4))],
+                boxShadow: const [
+                  BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 4)),
+                ],
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(isError ? Icons.error_outline : Icons.check_circle_outline, color: Colors.white, size: 20),
+                  Icon(isError ? Icons.error_outline : Icons.check_circle_outline,
+                      color: Colors.white, size: 20),
                   const SizedBox(width: 10),
                   Flexible(
                     child: Text(
@@ -63,97 +66,157 @@ class AccountPage extends StatefulWidget {
   State<AccountPage> createState() => _AccountPageState();
 }
 
-class _AccountPageState extends State<AccountPage> with SingleTickerProviderStateMixin {
+class _AccountPageState extends State<AccountPage> {
   final _usernameController = TextEditingController();
-  final _websiteController = TextEditingController();
 
-  var _loading = true;
+  bool _loadingProfile = true;
+  bool _loadingFinancial = true;
   int? _nashScore;
-  late final AnimationController _animController;
-  late final Animation<double> _avatarScale;
 
-  /// Called once a user id is received within `onAuthenticated()`
-  Future<void> _getProfile() async {
-    setState(() {
-      _loading = true;
-    });
+  double _totalProfit = 0;
+  double _totalLending = 0;
+  double _totalBorrowing = 0;
+  double _totalBalance = 0;
 
+  List<Map<String, dynamic>> _profitRows = [];
+  List<Map<String, dynamic>> _lendingRows = [];
+  List<Map<String, dynamic>> _borrowingRows = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadFinancialData());
+  }
+
+  Future<void> _loadProfile() async {
+    setState(() => _loadingProfile = true);
     try {
-      final userId = supabase.auth.currentSession!.user.id;
-        final data =
-            await supabase.from('profiles').select('username, website, nashScore').eq('id', userId).single();
-        _usernameController.text = (data['username'] ?? '') as String;
-        _websiteController.text = (data['website'] ?? '') as String;
-        _nashScore = (data['nashScore'] is num) ? (data['nashScore'] as num).toInt() : null;
+      final userId = supabase.auth.currentSession?.user.id;
+      if (userId == null) throw AuthException('User not authenticated');
 
+      final profile = await supabase
+          .from('profiles')
+          .select('username, nashScore, balance')
+          .eq('id', userId)
+          .maybeSingle();
+
+      if (profile != null) {
+        _usernameController.text = (profile['username'] ?? '') as String;
+        final score = profile['nashScore'];
+        if (score is num) _nashScore = score.toInt();
+        _totalBalance = (profile['balance'] ?? 0).toDouble();
+      }
     } on PostgrestException catch (error) {
       if (mounted) showToast(context, error.message, isError: true);
-    } catch (error) {
-      if (mounted) {
-        showToast(context, 'Unexpected error occurred', isError: true);
-      }
+    } catch (_) {
+      if (mounted) showToast(context, 'Unable to load profile', isError: true);
     } finally {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-        });
-      }
+      if (mounted) setState(() => _loadingProfile = false);
     }
   }
 
-  /// Show a dialog that allows editing username and avatar URL (photo)
-  Future<bool?> _showEditProfileDialog() async {
-    final username = _usernameController.text.trim();
-  final usernameController = TextEditingController(text: username);
+  Future<void> _loadFinancialData() async {
+    setState(() => _loadingFinancial = true);
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) throw AuthException('User not authenticated');
+      final userId = user.id;
 
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit profile'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextFormField(
-              controller: usernameController,
-              decoration: const InputDecoration(labelText: 'Username'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
-          ElevatedButton(
-              onPressed: () async {
-              final newName = usernameController.text.trim();
-              Navigator.of(context).pop(true);
+      final investments = await supabase
+          .from('investments')
+          .select('loan_id, selection, outcome, amount, profit_amount, created_at')
+          .eq('investor_id', userId) as List<dynamic>;
+      final parsedInvestments = investments
+          .cast<Map<String, dynamic>>()
+          .map((row) => {
+                ...row,
+                'created_at': DateTime.tryParse(row['created_at']?.toString() ?? ''),
+                'amount': _asDouble(row['amount']),
+                'profit_amount': _asDouble(row['profit_amount']),
+              })
+          .where((row) => row['created_at'] != null)
+          .toList()
+        ..sort((a, b) => (a['created_at'] as DateTime).compareTo(b['created_at'] as DateTime));
 
-              setState(() => _loading = true);
-              try {
-                final user = supabase.auth.currentUser;
-                final updates = {
-                  'id': user!.id,
-                  'username': newName,
-                  'updated_at': DateTime.now().toIso8601String(),
-                };
-                await supabase.from('profiles').upsert(updates);
-                if (mounted) {
-                  _usernameController.text = newName;
-                }
-              } on PostgrestException catch (error) {
-                if (mounted) showToast(context, error.message, isError: true);
-              } catch (error) {
-                if (mounted) showToast(context, 'Unexpected error occurred', isError: true);
-              } finally {
-                if (mounted) setState(() => _loading = false);
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
+      final profitSum = parsedInvestments.fold<double>(
+        0,
+        (sum, row) => sum + (row['profit_amount'] as double),
+      );
 
-    usernameController.dispose();
-    return result == true;
+      final lendingQuery = await supabase
+          .from('bank_market')
+          .select('loan_id, amount, outcome, done, settled_at, created_at')
+          .eq('lender_id', userId) as List<dynamic>;
+      final lendingRows = lendingQuery
+          .cast<Map<String, dynamic>>()
+          .map((row) => {
+                ...row,
+                'created_at': DateTime.tryParse(row['created_at']?.toString() ?? ''),
+                'settled_at': DateTime.tryParse(row['settled_at']?.toString() ?? ''),
+                'amount': _asDouble(row['amount']),
+                'done': row['done'] == true,
+              })
+          .where((row) => row['created_at'] != null)
+          .toList()
+        ..sort((a, b) => (a['created_at'] as DateTime).compareTo(b['created_at'] as DateTime));
+
+      final lendingSum = lendingRows.fold<double>(
+        0,
+        (sum, row) => sum + (row['amount'] as double),
+      );
+
+      final borrowingQuery = await supabase
+          .from('bank_market')
+          .select('loan_id, amount, outcome, done, settled_at, created_at')
+          .eq('lendee_id', userId) as List<dynamic>;
+      final borrowingRows = borrowingQuery
+          .cast<Map<String, dynamic>>()
+          .map((row) => {
+                ...row,
+                'created_at': DateTime.tryParse(row['created_at']?.toString() ?? ''),
+                'settled_at': DateTime.tryParse(row['settled_at']?.toString() ?? ''),
+                'amount': _asDouble(row['amount']),
+                'done': row['done'] == true,
+              })
+          .where((row) => row['created_at'] != null)
+          .toList()
+        ..sort((a, b) => (a['created_at'] as DateTime).compareTo(b['created_at'] as DateTime));
+
+      final borrowingSum = borrowingRows.fold<double>(
+        0,
+        (sum, row) => sum + (row['amount'] as double),
+      );
+      // persist profit sum into profiles.profits for this user
+      await supabase
+          .from('profiles')
+          .update({'profits': profitSum})
+          .eq('id', userId);
+
+      if (!mounted) return;
+      setState(() {
+        _profitRows = parsedInvestments;
+        _lendingRows = lendingRows;
+        _borrowingRows = borrowingRows;
+        _totalProfit = profitSum;
+        _totalLending = lendingSum;
+        _totalBorrowing = borrowingSum;
+        _totalBalance = _totalBalance;
+      });
+    } on PostgrestException catch (error) {
+      if (mounted) showToast(context, error.message, isError: true);
+    } catch (_) {
+      if (mounted) showToast(context, 'Unable to load financial data', isError: true);
+    } finally {
+      if (mounted) setState(() => _loadingFinancial = false);
+    }
+  }
+
+  Future<void> _refreshAll() async {
+    await Future.wait([
+      _loadProfile(),
+      _loadFinancialData(),
+    ]);
   }
 
   Future<void> _signOut() async {
@@ -161,200 +224,331 @@ class _AccountPageState extends State<AccountPage> with SingleTickerProviderStat
       await supabase.auth.signOut();
     } on AuthException catch (error) {
       if (mounted) showToast(context, error.message, isError: true);
-    } catch (error) {
-      if (mounted) {
-        showToast(context, 'Unexpected error occurred', isError: true);
-      }
-    } finally {
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const LoginPage()),
-        );
-      }
+      return;
+    } catch (_) {
+      if (mounted) showToast(context, 'Unexpected error occurred', isError: true);
+      return;
     }
-  }
 
-  @override
-  void initState() {
-    super.initState();
-    _animController = AnimationController(vsync: this, duration: const Duration(seconds: 3));
-    _avatarScale = Tween<double>(begin: 0.96, end: 1.03).animate(CurvedAnimation(parent: _animController, curve: Curves.easeInOut));
-    _animController.repeat(reverse: true);
-    _getProfile();
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const LoginPage()),
+    );
   }
 
   @override
   void dispose() {
     _usernameController.dispose();
-    _websiteController.dispose();
-    _animController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(color: theme.colorScheme.background),
-        child: Stack(
+      appBar: AppBar(
+        leading: IconButton(
+          tooltip: 'Sign out',
+          icon: const Icon(Icons.logout),
+          onPressed: _signOut,
+        ),
+        title: const Text('Account Overview'),
+        actions: [
+          IconButton(onPressed: _refreshAll, icon: const Icon(Icons.refresh)),
+          IconButton(
+            tooltip: 'Open market',
+            icon: const Icon(Icons.storefront_outlined),
+            onPressed: () {
+              // animated slide transition to MarketPage
+              Navigator.of(context).push(PageRouteBuilder(
+                transitionDuration: const Duration(milliseconds: 400),
+                reverseTransitionDuration: const Duration(milliseconds: 350),
+                pageBuilder: (context, animation, secondaryAnimation) => const MarketPage(),
+                transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                  final tween = Tween(begin: const Offset(1.0, 0.0), end: Offset.zero).chain(CurveTween(curve: Curves.easeInOut));
+                  return SlideTransition(position: animation.drive(tween), child: child);
+                },
+              ));
+            },
+          ),
+        ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: _refreshAll,
+        child: ListView(
+          padding: const EdgeInsets.all(20),
           children: [
-            // Top banner
-            Positioned(top: 0, left: 0, right: 0, child: TopBanner()),
+            _buildProfileCard(context),
+            const SizedBox(height: 18),
+            _buildMetricRow(context),
+            const SizedBox(height: 24),
+            _buildFinancialTabs(context),
+          ],
+        ),
+      ),
+    );
+  }
 
-            Positioned.fill(
-              top: 140,
-              child: Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Elevated profile card
-                      Card(
-                        elevation: 12,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 18.0, vertical: 18.0),
-                          child: Column(
-                            children: [
-                              // Profile picture with subtle scale animation
-                              ScaleTransition(
-                                scale: _avatarScale,
-                                child: Container(
-                                  width: 128,
-                                  height: 128,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    gradient: LinearGradient(colors: [theme.colorScheme.primary, theme.colorScheme.secondary], begin: Alignment.topRight, end: Alignment.bottomLeft),
-                                    boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 12, offset: const Offset(0, 6))],
-                                  ),
-                                  alignment: Alignment.center,
-                                  child: Text(
-                                    (_usernameController.text.isNotEmpty ? _usernameController.text[0].toUpperCase() : 'U'),
-                                    style: theme.textTheme.headlineLarge?.copyWith(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 48),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 350),
-                                child: Text(
-                                  _usernameController.text.isNotEmpty ? _usernameController.text : 'Unknown User',
-                                  key: ValueKey<String>(_usernameController.text),
-                                  style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 400),
-                                child: Text(
-                                  '${_nashScore != null ? _nashScore.toString() : '—'} NASH',
-                                  key: ValueKey<int?>(_nashScore),
-                                  style: theme.textTheme.headlineSmall?.copyWith(color: theme.colorScheme.primary, fontWeight: FontWeight.bold),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  ElevatedButton.icon(
-                                    onPressed: _loading ? null : () => _showEditProfileDialog(),
-                                    icon: const Icon(Icons.edit, size: 18),
-                                    label: const Text('Edit Profile'),
-                                    style: ElevatedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12)),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  OutlinedButton(
-                                    onPressed: _signOut,
-                                    child: const Text('Sign Out'),
-                                    style: OutlinedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12)),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
+  Widget _buildProfileCard(BuildContext context) {
+    final theme = Theme.of(context);
+    final initials = _usernameController.text.isNotEmpty
+        ? _usernameController.text.substring(0, 1).toUpperCase()
+        : 'U';
+
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 42,
+              backgroundColor: theme.colorScheme.primary.withOpacity(0.2),
+              child: Text(
+                initials,
+                style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+              ),
+            ),
+            const SizedBox(width: 20),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _loadingProfile
+                      ? const LinearProgressIndicator(minHeight: 6)
+                      : Text(
+                          _usernameController.text.isNotEmpty
+                              ? _usernameController.text
+                              : 'Unknown user',
+                          style: theme.textTheme.headlineSmall,
                         ),
-                      ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            _buildNashScoreBadge(theme),
+          ],
+        ),
+      ),
+    );
+  }
 
-                      const SizedBox(height: 18),
+  Widget _buildNashScoreBadge(ThemeData theme) {
+    final score = _nashScore?.toString() ?? '—';
+    return Container(
+      width: 120,
+      height: 120,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          colors: [theme.colorScheme.primary, theme.colorScheme.secondary],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, 6))],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            score,
+            style: theme.textTheme.displaySmall?.copyWith(
+              color: Colors.black,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'NASH',
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: Colors.black,
+              letterSpacing: 2,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-                      // Tab container with 3 tabs (Posts / Info / Settings)
-                      SizedBox(
-                        width: double.infinity,
-                        child: Card(
-                          elevation: 6,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          child: DefaultTabController(
-                            length: 3,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                                  decoration: BoxDecoration(
-                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-                                    color: theme.colorScheme.onPrimary,
-                                  ),
-                                  child: TabBar(
-                                    labelColor: theme.colorScheme.primary,
-                                    unselectedLabelColor: theme.textTheme.bodyMedium?.color?.withOpacity(0.6),
-                                    indicator: UnderlineTabIndicator(
-                                      borderSide: BorderSide(width: 3.0, color: theme.colorScheme.primary),
-                                      insets: const EdgeInsets.symmetric(horizontal: 24),
-                                    ),
-                                    tabs: const [
-                                      Tab(text: 'PROFIT'),
-                                      Tab(text: 'LENDING'),
-                                      Tab(text: 'BORROWING'),
-                                    ],
-                                  ),
-                                ),
-                                SizedBox(
-                                  height: 260,
-                                  child: TabBarView(
-                                    children: [
-                                      // Profit tab - placeholder
-                                      Padding(
-                                        padding: const EdgeInsets.all(16.0),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                          ],
-                                        ),
-                                      ),
+  Widget _buildMetricRow(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cards = [
+          _MetricCard(label: 'Total Profit', value: _totalProfit),
+          _MetricCard(label: 'Total Lending', value: _totalLending),
+          _MetricCard(label: 'Total Borrowing', value: _totalBorrowing),
+          _MetricCard(label: 'Balance', value: _totalBalance),
+        ];
 
-                                      // Lending tab - placeholder
-                                      Padding(
-                                        padding: const EdgeInsets.all(16.0),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.center,
-                                          children: [
-                                          ],
-                                        ),
-                                      ),
+        if (_loadingFinancial) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-                                      // Borrowing tab - placeholder
-                                      Padding(
-                                        padding: const EdgeInsets.all(16.0),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                                          children: [],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+        if (constraints.maxWidth > 720) {
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: cards
+                .map((card) => Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: card)))
+                .toList(),
+          );
+        }
+
+        return Column(
+          children: cards
+              .map((card) => Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: card))
+              .toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildFinancialTabs(BuildContext context) {
+    if (_loadingFinancial) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 48),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: DefaultTabController(
+          length: 3,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const TabBar(
+                labelColor: Colors.white,
+                indicatorColor: Colors.greenAccent,
+                tabs: [
+                  Tab(text: 'PROFITS'),
+                  Tab(text: 'LENDING'),
+                  Tab(text: 'BORROWING'),
+                ],
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 320,
+                child: TabBarView(
+                  children: [
+                    _buildTable(_profitRows,
+                        columns: const ['Date', 'Loan ID', 'Selection', 'Outcome', 'Amount', 'Profit']),
+                    _buildTable(_lendingRows,
+                        columns: const ['Date', 'Loan ID', 'Amount', 'Outcome', 'Status', 'Settled']),
+                    _buildTable(_borrowingRows,
+                        columns: const ['Date', 'Loan ID', 'Amount', 'Outcome', 'Status', 'Settled']),
+                  ],
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTable(List<Map<String, dynamic>> rows, {required List<String> columns}) {
+    if (rows.isEmpty) {
+      return const Center(child: Text('No data available yet.'));
+    }
+
+    return Scrollbar(
+      child: ListView.separated(
+        itemCount: rows.length,
+        separatorBuilder: (_, __) => const Divider(height: 1, thickness: 0.4),
+        itemBuilder: (context, index) {
+          final row = rows[index];
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildRowLine(columns[0], _formatDate(row['created_at'])),
+                if (columns.contains('Loan ID'))
+                  _buildRowLine('Loan ID', row['loan_id']?.toString() ?? '—'),
+                if (columns.contains('Selection'))
+                  _buildRowLine('Selection', row['selection']?.toString() ?? '—'),
+                if (columns.contains('Outcome'))
+                  _buildRowLine('Outcome', row['outcome']?.toString() ?? '—'),
+                if (columns.contains('Amount'))
+                  _buildRowLine('Amount', _formatCurrency(row['amount'])),
+                if (columns.contains('Profit'))
+                  _buildRowLine('Profit', _formatCurrency(row['profit_amount'])),
+                if (columns.contains('Status'))
+                  _buildRowLine('Status', row['done'] == true ? 'Complete' : 'Active'),
+                if (columns.contains('Settled'))
+                  _buildRowLine('Settled', _formatDate(row['settled_at'])),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildRowLine(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          SizedBox(width: 110, child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600))),
+          Expanded(child: Text(value)),
+        ],
+      ),
+    );
+  }
+
+  String _formatCurrency(dynamic value) {
+    if (value == null) return '-';
+    if (value is num) {
+      return '\$${value.toStringAsFixed(2)}';
+    }
+    final parsed = double.tryParse(value.toString());
+    return parsed != null ? '\$${parsed.toStringAsFixed(2)}' : value.toString();
+  }
+
+  String _formatDate(dynamic value) {
+    if (value is DateTime) {
+      return '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')} '
+          '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+    }
+    return value?.toString() ?? '—';
+  }
+
+  static double _asDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+}
+
+class _MetricCard extends StatelessWidget {
+  const _MetricCard({required this.label, required this.value});
+
+  final String label;
+  final double value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label.toUpperCase(), style: theme.textTheme.labelSmall?.copyWith(letterSpacing: 1.8)),
+            const SizedBox(height: 8),
+            Text(
+              '\$${value.toStringAsFixed(2)}',
+              style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
             ),
           ],
         ),
