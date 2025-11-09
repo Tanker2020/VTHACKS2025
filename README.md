@@ -1,6 +1,6 @@
 # VTHacks 2025-2026 Backend
 
-BlahBlahBlah
+Projet for VTHACKS
 
 ## GraphQL Documentation
 
